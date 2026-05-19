@@ -40,7 +40,7 @@ return "DESCONHECIDO";
 }
 
 // =========================
-// IA LOCAL
+// ANÁLISE INTELIGENTE
 // =========================
 
 function analisarRisco(texto){
@@ -76,6 +76,33 @@ motivos.push(
 
 });
 
+const marcas=[
+"google",
+"youtube",
+"mercadolivre",
+"netflix",
+"facebook",
+"instagram"
+];
+
+marcas.forEach(marca=>{
+
+if(
+texto.toLowerCase().includes(marca)
+&&
+texto.toLowerCase()!==`${marca}.com`
+){
+
+score+=50;
+
+motivos.push(
+"Possível domínio clonado"
+);
+
+}
+
+});
+
 return{
 score,
 motivos
@@ -87,7 +114,7 @@ motivos
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar",async(req,res)=>{
+app.post("/api/verificar", async(req,res)=>{
 
 try{
 
@@ -104,24 +131,47 @@ erro:"Texto não enviado"
 
 }
 
-const tipo=
-detectarTipo(texto);
+const tipo=detectarTipo(texto);
 
-const analise=
-analisarRisco(texto);
+const analise=analisarRisco(texto);
 
-let score=
-analise.score;
+const {data:reputacao}=await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",texto)
+.limit(1);
 
-let status=
-score>=30
-?
-"SUSPEITO"
-:
-"SEGURO";
+const {data:denunciasBanco}=await supabase
+.from("lista_negra")
+.select("*")
+.eq("conteudo",texto);
+
+let score=analise.score;
+
+let status="SEGURO";
 
 let motivo=
 analise.motivos.join(", ");
+
+if(score>=70){
+
+status="ALTO RISCO";
+
+}else if(score>=30){
+
+status="SUSPEITO";
+
+}
+
+if(
+reputacao &&
+reputacao.length>0
+){
+
+score+=
+reputacao[0].score || 0;
+
+}
 
 await supabase
 .from("verificacoes")
@@ -141,7 +191,8 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:0,
+denuncias:
+denunciasBanco?.length || 0,
 motivo
 
 });
@@ -151,7 +202,7 @@ motivo
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro verificar"
+erro:"Erro ao verificar"
 });
 
 }
@@ -162,7 +213,7 @@ erro:"Erro verificar"
 // DENUNCIAR
 // =========================
 
-app.post("/api/denunciar",async(req,res)=>{
+app.post("/api/denunciar", async(req,res)=>{
 
 try{
 
@@ -189,6 +240,54 @@ usuario_id
 }
 ]);
 
+const {data:reputacao}=await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",conteudo)
+.limit(1);
+
+if(
+reputacao &&
+reputacao.length>0
+){
+
+await supabase
+.from("reputacoes")
+.update({
+
+total_denuncias:
+reputacao[0]
+.total_denuncias+1,
+
+score:
+reputacao[0]
+.score+50,
+
+nivel:
+"ALTO RISCO"
+
+})
+.eq(
+"conteudo",
+conteudo
+);
+
+}else{
+
+await supabase
+.from("reputacoes")
+.insert([
+{
+conteudo,
+tipo,
+total_denuncias:1,
+score:50,
+nivel:"ALTO RISCO"
+}
+]);
+
+}
+
 return res.json({
 
 sucesso:true,
@@ -202,7 +301,7 @@ mensagem:
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro denúncia"
+erro:"Erro ao denunciar"
 });
 
 }
@@ -210,7 +309,7 @@ erro:"Erro denúncia"
 });
 
 // =========================
-// FAVORITAR
+// FAVORITOS
 // =========================
 
 app.post("/api/favoritar",async(req,res)=>{
@@ -236,10 +335,7 @@ usuario_id
 ]);
 
 return res.json({
-
-mensagem:
-"Favoritado"
-
+mensagem:"Favoritado"
 });
 
 }catch(error){
@@ -254,28 +350,28 @@ erro:"Erro favorito"
 
 });
 
-// =========================
-// FAVORITOS
-// =========================
-
 app.get("/api/favoritos",async(req,res)=>{
 
-const usuario_id=
-req.query.usuario_id;
+const { usuario_id }=req.query;
 
-const {data}=await supabase
+let query=supabase
 .from("favoritos")
 .select("*")
-.eq(
-"usuario_id",
-usuario_id
-)
 .order(
 "id",
-{
-ascending:false
-}
+{ascending:false}
 );
+
+if(usuario_id){
+
+query=query.eq(
+"usuario_id",
+usuario_id
+);
+
+}
+
+const {data}=await query;
 
 return res.json(data);
 
@@ -287,23 +383,27 @@ return res.json(data);
 
 app.get("/api/historico",async(req,res)=>{
 
-const usuario_id=
-req.query.usuario_id;
+const { usuario_id }=req.query;
 
-const {data}=await supabase
+let query=supabase
 .from("verificacoes")
 .select("*")
-.eq(
-"usuario_id",
-usuario_id
-)
 .order(
 "id",
-{
-ascending:false
-}
+{ascending:false}
 )
 .limit(10);
+
+if(usuario_id){
+
+query=query.eq(
+"usuario_id",
+usuario_id
+);
+
+}
+
+const {data}=await query;
 
 return res.json(data);
 

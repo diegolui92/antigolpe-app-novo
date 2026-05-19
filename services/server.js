@@ -39,53 +39,63 @@ return "DESCONHECIDO";
 }
 
 // =========================
-// CALCULAR SCORE
+// CALCULAR RISCO
 // =========================
 
-function calcularRisco(totalDenuncias){
+function calcularRisco(total){
 
-if(totalDenuncias>=10){
+if(total>=10){
+return {score:100,nivel:"GOLPE CONFIRMADO"};
+}
 
-return{
-score:100,
-nivel:"GOLPE CONFIRMADO"
-};
+if(total>=6){
+return {score:80,nivel:"ALTO RISCO"};
+}
+
+if(total>=3){
+return {score:60,nivel:"RISCO MÉDIO"};
+}
+
+if(total>=1){
+return {score:30,nivel:"SUSPEITO"};
+}
+
+return {score:0,nivel:"SEGURO"};
 
 }
 
-if(totalDenuncias>=6){
+// =========================
+// GOLPES EM ALTA
+// =========================
 
-return{
-score:80,
-nivel:"ALTO RISCO"
-};
+app.get("/api/alertas",async(req,res)=>{
+
+try{
+
+const {data}=await supabase
+.from("reputacoes")
+.select("*")
+.order(
+"total_denuncias",
+{
+ascending:false
+}
+)
+.limit(5);
+
+return res.json(data);
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro alertas"
+});
 
 }
 
-if(totalDenuncias>=3){
-
-return{
-score:60,
-nivel:"RISCO MÉDIO"
-};
-
-}
-
-if(totalDenuncias>=1){
-
-return{
-score:30,
-nivel:"SUSPEITO"
-};
-
-}
-
-return{
-score:0,
-nivel:"SEGURO"
-};
-
-}
+});
 
 // =========================
 // VERIFICAR
@@ -105,26 +115,19 @@ erro:"Texto não enviado"
 
 }
 
-const tipo=detectarTipo(texto);
-
-const {data:reputacao}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",texto)
-.limit(1);
+const tipo=
+detectarTipo(texto);
 
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
 .select("*")
 .eq("conteudo",texto);
 
-let totalDenuncias=
+const total=
 denunciasBanco?.length || 0;
 
 const risco=
-calcularRisco(
-totalDenuncias
-);
+calcularRisco(total);
 
 await supabase
 .from("verificacoes")
@@ -143,9 +146,9 @@ return res.json({
 tipo,
 status:risco.nivel,
 score:risco.score,
-denuncias:totalDenuncias,
+denuncias:total,
 motivo:
-`${totalDenuncias} denúncia(s) encontradas`,
+`${total} denúncia(s) encontradas`,
 motivos:
 denunciasBanco?.map(
 item=>item.motivo
@@ -158,7 +161,7 @@ item=>item.motivo
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro ao verificar"
+erro:"Erro verificar"
 });
 
 }
@@ -248,11 +251,9 @@ nivel:risco.nivel
 }
 
 return res.json({
-
 sucesso:true,
 mensagem:
 "Denúncia registrada"
-
 });
 
 }catch(error){
@@ -260,7 +261,7 @@ mensagem:
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro ao denunciar"
+erro:"Erro denunciar"
 });
 
 }
@@ -272,8 +273,6 @@ erro:"Erro ao denunciar"
 // =========================
 
 app.post("/api/favoritar",async(req,res)=>{
-
-try{
 
 const {
 conteudo,
@@ -292,20 +291,8 @@ tipo
 ]);
 
 return res.json({
-
-sucesso:true,
-mensagem:
-"Favorito salvo"
-
+mensagem:"Favorito salvo"
 });
-
-}catch(error){
-
-return res.status(500).json({
-erro:"Erro ao favoritar"
-});
-
-}
 
 });
 
@@ -314,7 +301,12 @@ app.get("/api/favoritos",async(req,res)=>{
 const {data}=await supabase
 .from("favoritos")
 .select("*")
-.order("id",{ascending:false});
+.order(
+"id",
+{
+ascending:false
+}
+);
 
 return res.json(data);
 
@@ -329,7 +321,12 @@ app.get("/api/historico",async(req,res)=>{
 const {data}=await supabase
 .from("verificacoes")
 .select("*")
-.order("id",{ascending:false})
+.order(
+"id",
+{
+ascending:false
+}
+)
 .limit(10);
 
 return res.json(data);

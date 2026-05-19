@@ -16,12 +16,10 @@ export default function VerificarScreen() {
   function identificarTipo(valor: string) {
     const texto = valor.trim();
 
-    // EMAIL
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(texto)) {
       return "EMAIL";
     }
 
-    // SITE
     if (
       texto.includes("www.") ||
       texto.includes(".com") ||
@@ -32,7 +30,6 @@ export default function VerificarScreen() {
       return "SITE";
     }
 
-    // CPF / TELEFONE
     const numeros = texto.replace(/\D/g, "");
 
     if (numeros.length === 11) {
@@ -43,7 +40,6 @@ export default function VerificarScreen() {
       return "TELEFONE";
     }
 
-    // PIX
     if (
       texto.toLowerCase().includes("pix") ||
       texto.toLowerCase().includes("chave")
@@ -56,16 +52,16 @@ export default function VerificarScreen() {
 
   async function verificar() {
     try {
+
       const response = await fetch(
         "https://antigolpe-api-production.up.railway.app/api/verificar",
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":"application/json",
           },
           body: JSON.stringify({
             texto,
-            api_key: "ag_d221603c842605a2514d3d837e732d06",
           }),
         }
       );
@@ -78,26 +74,34 @@ export default function VerificarScreen() {
         ...data,
         tipo,
       });
-    } catch (error) {
+
+    } catch(error){
+
       console.log(error);
 
-      Alert.alert("Erro", "Erro ao verificar");
+      Alert.alert(
+        "Erro",
+        "Erro ao verificar"
+      );
+
     }
   }
 
   async function denunciar() {
+
     try {
+
       const response = await fetch(
         "https://antigolpe-api-production.up.railway.app/api/denunciar",
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+          method:"POST",
+          headers:{
+            "Content-Type":"application/json",
           },
           body: JSON.stringify({
-            valor: texto,
-            motivo: "Denunciado pelo usuário",
-            detalhes: "Denúncia enviada pelo app",
+            conteudo:texto,
+            motivo:"Denunciado pelo usuário",
+            descricao:"Denúncia enviada pelo app"
           }),
         }
       );
@@ -106,18 +110,29 @@ export default function VerificarScreen() {
 
       Alert.alert(
         "Denúncia enviada",
-        data.mensagem || "Denúncia registrada com sucesso"
+        data.mensagem || "Denúncia registrada"
       );
-    } catch (error) {
+
+      setTexto("");
+
+    } catch(error){
+
       console.log(error);
 
-      Alert.alert("Erro", "Erro ao denunciar");
+      Alert.alert(
+        "Erro",
+        "Erro ao denunciar"
+      );
+
     }
   }
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>AntiGolpe</Text>
+
+      <Text style={styles.title}>
+        AntiGolpe
+      </Text>
 
       <TextInput
         style={styles.input}
@@ -128,8 +143,13 @@ export default function VerificarScreen() {
         onChangeText={setTexto}
       />
 
-      <TouchableOpacity style={styles.button} onPress={verificar}>
-        <Text style={styles.buttonText}>Verificar</Text>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={verificar}
+      >
+        <Text style={styles.buttonText}>
+          Verificar
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -142,121 +162,130 @@ export default function VerificarScreen() {
       </TouchableOpacity>
 
       {resultado && (
-        <View style={styles.resultado}>
-          <Text style={styles.tipo}>
-            Tipo: {resultado.tipo || "Desconhecido"}
-          </Text>
 
-          <Text
-            style={[
-              styles.status,
-              {
-                color:
-                  resultado.status === "ALTO RISCO"
-                    ? "#ff4444"
-                    : resultado.status === "SUSPEITO"
-                    ? "#ffaa00"
-                    : "#00ff99",
-              },
-            ]}
-          >
-            Status: {resultado.status}
-          </Text>
+      <View style={styles.resultado}>
 
-          <Text style={styles.score}>
-            Score: {resultado.score}
-          </Text>
+      <Text style={styles.tipo}>
+        Tipo: {resultado.tipo}
+      </Text>
 
-          <Text style={styles.mensagem}>
-            {resultado.motivo || resultado.mensagem}
-          </Text>
-        </View>
+      <Text
+      style={[
+      styles.status,
+      {
+        color:
+        resultado.status==="ALTO RISCO"
+        ? "#ff4444"
+        : resultado.status==="SUSPEITO"
+        ? "#ffaa00"
+        : "#00ff99"
+      }
+      ]}
+      >
+
+      Status: {resultado.status}
+
+      </Text>
+
+      <Text style={styles.score}>
+        Score: {resultado.score}
+      </Text>
+
+      <Text style={styles.mensagem}>
+        {resultado.motivo}
+      </Text>
+
+      </View>
+
       )}
+
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#020d22",
-    padding: 20,
-  },
 
-  title: {
-    color: "#fff",
-    fontSize: 42,
-    fontWeight: "bold",
-    alignSelf: "center",
-    marginTop: 50,
-    marginBottom: 30,
-  },
+container:{
+flex:1,
+backgroundColor:"#020d22",
+padding:20,
+},
 
-  input: {
-    backgroundColor: "#16233d",
-    color: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    minHeight: 150,
-    fontSize: 18,
-  },
+title:{
+color:"#fff",
+fontSize:42,
+fontWeight:"bold",
+alignSelf:"center",
+marginTop:50,
+marginBottom:30,
+},
 
-  button: {
-    backgroundColor: "#00c26e",
-    padding: 20,
-    borderRadius: 20,
-    alignItems: "center",
-    marginTop: 20,
-  },
+input:{
+backgroundColor:"#16233d",
+color:"#fff",
+borderRadius:20,
+padding:20,
+minHeight:150,
+fontSize:18,
+},
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "bold",
-  },
+button:{
+backgroundColor:"#00c26e",
+padding:20,
+borderRadius:20,
+alignItems:"center",
+marginTop:20,
+},
 
-  denunciarButton: {
-    backgroundColor: "#ff4444",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
-    marginTop: 12,
-  },
+buttonText:{
+color:"#fff",
+fontSize:22,
+fontWeight:"bold",
+},
 
-  denunciarText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
+denunciarButton:{
+backgroundColor:"#ff4444",
+padding:18,
+borderRadius:20,
+alignItems:"center",
+marginTop:12,
+},
 
-  resultado: {
-    backgroundColor: "#09152d",
-    marginTop: 30,
-    borderRadius: 20,
-    padding: 20,
-  },
+denunciarText:{
+color:"#fff",
+fontSize:20,
+fontWeight:"bold",
+},
 
-  tipo: {
-    color: "#ccc",
-    fontSize: 18,
-    marginBottom: 15,
-  },
+resultado:{
+backgroundColor:"#09152d",
+marginTop:30,
+borderRadius:20,
+padding:20,
+},
 
-  status: {
-    fontSize: 30,
-    fontWeight: "bold",
-    marginBottom: 20,
-  },
+tipo:{
+color:"#ccc",
+fontSize:18,
+marginBottom:15,
+},
 
-  score: {
-    color: "#fff",
-    fontSize: 24,
-    marginBottom: 15,
-  },
+status:{
+fontSize:30,
+fontWeight:"bold",
+marginBottom:20,
+},
 
-  mensagem: {
-    color: "#ccc",
-    fontSize: 18,
-    lineHeight: 28,
-  },
+score:{
+color:"#fff",
+fontSize:24,
+marginBottom:15,
+},
+
+mensagem:{
+color:"#ccc",
+fontSize:18,
+lineHeight:28,
+}
+
 });

@@ -37,172 +37,252 @@ function detectarTipo(texto) {
 }
 
 // =========================
-// VERIFICAR
+// HISTÓRICO
 // =========================
 
-app.post("/api/verificar", async (req, res) => {
+app.get("/api/historico", async (req, res) => {
+
   try {
-    const { texto } = req.body;
 
-    if (!texto) {
-      return res.status(400).json({
-        erro: "Texto não enviado",
-      });
-    }
-
-    const tipo = detectarTipo(texto);
-
-    // CONSULTAR REPUTAÇÃO
-    const { data: reputacao } = await supabase
-      .from("reputacoes")
-      .select("*")
-      .eq("conteudo", texto)
-      .limit(1);
-
-    // CONSULTAR LISTA NEGRA
-    const { data: denunciasBanco } = await supabase
-      .from("lista_negra")
-      .select("*")
-      .eq("conteudo", texto);
-
-    let status = "SEGURO";
-    let score = 0;
-    let motivo = "Nenhum risco encontrado";
-
-    // CASO EXISTA REPUTAÇÃO
-    if (reputacao && reputacao.length > 0) {
-      status = reputacao[0].nivel || "SUSPEITO";
-      score = reputacao[0].score || 0;
-      motivo = "Resultado baseado na comunidade";
-    }
-
-    // ANÁLISE PADRÃO
-    if (
-      texto.includes(".xyz") ||
-      texto.includes("bit.ly") ||
-      texto.includes("ganhe") ||
-      texto.includes("pix")
-    ) {
-      status = "SUSPEITO";
-      score = 40;
-      motivo = "Domínio suspeito";
-    }
-
-    // SALVAR VERIFICAÇÃO AUTOMÁTICA
-    await supabase
+    const { data, error } = await supabase
       .from("verificacoes")
-      .insert([
-        {
-          conteudo: texto,
-          tipo: tipo,
-          resultado: status,
-          score: score,
-          risco: motivo,
-        }
-      ]);
-
-    return res.json({
-      tipo,
-      status,
-      score,
-      denuncias: denunciasBanco?.length || 0,
-      motivo,
-      motivos:
-        denunciasBanco?.map(item => item.motivo) || []
-    });
-
-  } catch (error) {
-
-    console.log(error);
-
-    return res.status(500).json({
-      erro: "Erro ao verificar"
-    });
-
-  }
-});
-
-// =========================
-// DENUNCIAR
-// =========================
-
-app.post("/api/denunciar", async (req, res) => {
-
-  try {
-
-    const { conteudo, motivo, descricao } = req.body;
-
-    if (!conteudo) {
-      return res.status(400).json({
-        erro: "Conteúdo não enviado"
-      });
-    }
-
-    const tipo = detectarTipo(conteudo);
-
-    await supabase
-      .from("lista_negra")
-      .insert([
-        {
-          conteudo,
-          tipo,
-          motivo,
-          categoria: descricao,
-          risco: "ALTO"
-        }
-      ]);
-
-    const { data: reputacao } = await supabase
-      .from("reputacoes")
       .select("*")
-      .eq("conteudo", conteudo)
-      .limit(1);
+      .order("criado_em", {
+        ascending:false
+      })
+      .limit(20);
 
-    if (reputacao && reputacao.length > 0) {
+    if(error){
 
-      await supabase
-        .from("reputacoes")
-        .update({
-          total_denuncias:
-            reputacao[0].total_denuncias + 1,
-
-          score:
-            reputacao[0].score + 50,
-
-          nivel: "ALTO RISCO"
-        })
-        .eq("conteudo", conteudo);
-
-    } else {
-
-      await supabase
-        .from("reputacoes")
-        .insert([
-          {
-            conteudo,
-            tipo,
-            total_denuncias: 1,
-            score: 50,
-            nivel: "ALTO RISCO"
-          }
-        ]);
+      return res.status(500).json({
+        erro:error.message
+      });
 
     }
 
-    return res.json({
-      sucesso: true,
-      mensagem: "Denúncia registrada"
-    });
+    return res.json(data);
 
   } catch(error){
 
     console.log(error);
 
     return res.status(500).json({
-      erro:"Erro ao denunciar"
+      erro:"Erro ao carregar histórico"
     });
 
   }
+
+});
+
+// =========================
+// VERIFICAR
+// =========================
+
+app.post("/api/verificar", async (req, res) => {
+
+try{
+
+const { texto }=req.body;
+
+if(!texto){
+
+return res.status(400).json({
+erro:"Texto não enviado"
+});
+
+}
+
+const tipo=detectarTipo(texto);
+
+const { data: reputacao }=
+await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",texto)
+.limit(1);
+
+const { data: denunciasBanco }=
+await supabase
+.from("lista_negra")
+.select("*")
+.eq("conteudo",texto);
+
+let status="SEGURO";
+let score=0;
+let motivo="Nenhum risco encontrado";
+
+if(
+reputacao &&
+reputacao.length>0
+){
+
+status=
+reputacao[0].nivel ||
+"SUSPEITO";
+
+score=
+reputacao[0].score ||
+0;
+
+motivo=
+"Resultado baseado na comunidade";
+
+}
+
+if(
+texto.includes(".xyz") ||
+texto.includes("bit.ly") ||
+texto.includes("ganhe") ||
+texto.includes("pix")
+){
+
+status="SUSPEITO";
+score=40;
+motivo="Domínio suspeito";
+
+}
+
+await supabase
+.from("verificacoes")
+.insert([
+{
+conteudo:texto,
+tipo:tipo,
+resultado:status,
+score:score,
+risco:motivo
+}
+]);
+
+return res.json({
+
+tipo,
+status,
+score,
+denuncias:
+denunciasBanco?.length || 0,
+
+motivo,
+
+motivos:
+denunciasBanco?.map(
+item=>item.motivo
+)||[]
+
+});
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro ao verificar"
+});
+
+}
+
+});
+
+// =========================
+// DENUNCIAR
+// =========================
+
+app.post("/api/denunciar", async (req,res)=>{
+
+try{
+
+const {
+conteudo,
+motivo,
+descricao
+}=req.body;
+
+if(!conteudo){
+
+return res.status(400).json({
+erro:"Conteúdo não enviado"
+});
+
+}
+
+const tipo=
+detectarTipo(conteudo);
+
+await supabase
+.from("lista_negra")
+.insert([
+{
+conteudo,
+tipo,
+motivo,
+categoria:descricao,
+risco:"ALTO"
+}
+]);
+
+const { data: reputacao }=
+await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",conteudo)
+.limit(1);
+
+if(
+reputacao &&
+reputacao.length>0
+){
+
+await supabase
+.from("reputacoes")
+.update({
+
+total_denuncias:
+reputacao[0]
+.total_denuncias+1,
+
+score:
+reputacao[0]
+.score+50,
+
+nivel:
+"ALTO RISCO"
+
+})
+.eq(
+"conteudo",
+conteudo
+);
+
+}else{
+
+await supabase
+.from("reputacoes")
+.insert([
+{
+conteudo,
+tipo,
+total_denuncias:1,
+score:50,
+nivel:"ALTO RISCO"
+}
+]);
+
+}
+
+return res.json({
+sucesso:true,
+mensagem:"Denúncia registrada"
+});
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro ao denunciar"
+});
+
+}
 
 });
 
@@ -210,8 +290,13 @@ app.post("/api/denunciar", async (req, res) => {
 // SERVIDOR
 // =========================
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log("Servidor AntiGolpe rodando");
+app.listen(PORT,()=>{
+
+console.log(
+"Servidor AntiGolpe rodando"
+);
+
 });

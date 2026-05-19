@@ -1,15 +1,16 @@
 require("dotenv").config();
 
-const express=require("express");
-const cors=require("cors");
-const {createClient}=require("@supabase/supabase-js");
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const { createClient } = require("@supabase/supabase-js");
 
-const app=express();
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const supabase=createClient(
+const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
@@ -39,69 +40,81 @@ return "DESCONHECIDO";
 }
 
 // =========================
-// CALCULAR RISCO
+// ANÁLISE INTELIGENTE
 // =========================
 
-function calcularRisco(total){
+function analisarRisco(texto){
 
-if(total>=10){
-return {score:100,nivel:"GOLPE CONFIRMADO"};
-}
+let score=0;
+let motivos=[];
 
-if(total>=6){
-return {score:80,nivel:"ALTO RISCO"};
-}
+const suspeitos=[
+".xyz",
+"bit.ly",
+"tinyurl",
+"ganhe",
+"pix",
+"bonus",
+"premio",
+"urgente"
+];
 
-if(total>=3){
-return {score:60,nivel:"RISCO MÉDIO"};
-}
+suspeitos.forEach(item=>{
 
-if(total>=1){
-return {score:30,nivel:"SUSPEITO"};
-}
+if(
+texto.toLowerCase()
+.includes(item)
+){
 
-return {score:0,nivel:"SEGURO"};
+score+=20;
 
-}
-
-// =========================
-// GOLPES EM ALTA
-// =========================
-
-app.get("/api/alertas",async(req,res)=>{
-
-try{
-
-const {data}=await supabase
-.from("reputacoes")
-.select("*")
-.order(
-"total_denuncias",
-{
-ascending:false
-}
-)
-.limit(5);
-
-return res.json(data);
-
-}catch(error){
-
-console.log(error);
-
-return res.status(500).json({
-erro:"Erro alertas"
-});
+motivos.push(
+`Possui ${item}`
+);
 
 }
 
 });
+
+const marcas=[
+"google",
+"youtube",
+"mercadolivre",
+"netflix",
+"facebook",
+"instagram"
+];
+
+marcas.forEach(marca=>{
+
+if(
+texto.toLowerCase().includes(marca)
+&&
+texto.toLowerCase()!==`${marca}.com`
+){
+
+score+=50;
+
+motivos.push(
+"Possível domínio clonado"
+);
+
+}
+
+});
+
+return{
+score,
+motivos
+};
+
+}
 
 // =========================
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar",async(req,res)=>{
+app.post("/api/verificar", async(req,res)=>{
 
 try{
 
@@ -118,16 +131,49 @@ erro:"Texto não enviado"
 const tipo=
 detectarTipo(texto);
 
+const analise=
+analisarRisco(texto);
+
+const {data:reputacao}=await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",texto)
+.limit(1);
+
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
 .select("*")
 .eq("conteudo",texto);
 
-const total=
-denunciasBanco?.length || 0;
+let score=
+analise.score;
 
-const risco=
-calcularRisco(total);
+let status=
+"SEGURO";
+
+let motivo=
+analise.motivos.join(", ");
+
+if(
+score>=70
+){
+status="ALTO RISCO";
+}
+else if(
+score>=30
+){
+status="SUSPEITO";
+}
+
+if(
+reputacao &&
+reputacao.length>0
+){
+
+score+=
+reputacao[0].score || 0;
+
+}
 
 await supabase
 .from("verificacoes")
@@ -135,24 +181,20 @@ await supabase
 {
 conteudo:texto,
 tipo,
-resultado:risco.nivel,
-score:risco.score,
-risco:risco.nivel
+resultado:status,
+score,
+risco:motivo
 }
 ]);
 
 return res.json({
 
 tipo,
-status:risco.nivel,
-score:risco.score,
-denuncias:total,
-motivo:
-`${total} denúncia(s) encontradas`,
-motivos:
-denunciasBanco?.map(
-item=>item.motivo
-) || []
+status,
+score,
+denuncias:
+denunciasBanco?.length || 0,
+motivo
 
 });
 
@@ -161,7 +203,7 @@ item=>item.motivo
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro verificar"
+erro:"Erro ao verificar"
 });
 
 }
@@ -172,7 +214,7 @@ erro:"Erro verificar"
 // DENUNCIAR
 // =========================
 
-app.post("/api/denunciar",async(req,res)=>{
+app.post("/api/denunciar", async(req,res)=>{
 
 try{
 
@@ -203,27 +245,25 @@ const {data:reputacao}=await supabase
 .eq("conteudo",conteudo)
 .limit(1);
 
-let total=1;
-
 if(
 reputacao &&
 reputacao.length>0
 ){
 
-total=
-(reputacao[0]
-.total_denuncias || 0)+1;
-
-const risco=
-calcularRisco(total);
-
 await supabase
 .from("reputacoes")
 .update({
 
-total_denuncias:total,
-score:risco.score,
-nivel:risco.nivel
+total_denuncias:
+reputacao[0]
+.total_denuncias+1,
+
+score:
+reputacao[0]
+.score+50,
+
+nivel:
+"ALTO RISCO"
 
 })
 .eq(
@@ -233,27 +273,28 @@ conteudo
 
 }else{
 
-const risco=
-calcularRisco(1);
-
 await supabase
 .from("reputacoes")
 .insert([
 {
+
 conteudo,
 tipo,
 total_denuncias:1,
-score:risco.score,
-nivel:risco.nivel
+score:50,
+nivel:"ALTO RISCO"
+
 }
 ]);
 
 }
 
 return res.json({
+
 sucesso:true,
 mensagem:
 "Denúncia registrada"
+
 });
 
 }catch(error){
@@ -261,7 +302,9 @@ mensagem:
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro denunciar"
+
+erro:"Erro ao denunciar"
+
 });
 
 }
@@ -291,7 +334,8 @@ tipo
 ]);
 
 return res.json({
-mensagem:"Favorito salvo"
+mensagem:
+"Favoritado"
 });
 
 });
@@ -303,9 +347,7 @@ const {data}=await supabase
 .select("*")
 .order(
 "id",
-{
-ascending:false
-}
+{ascending:false}
 );
 
 return res.json(data);
@@ -323,17 +365,13 @@ const {data}=await supabase
 .select("*")
 .order(
 "id",
-{
-ascending:false
-}
+{ascending:false}
 )
 .limit(10);
 
 return res.json(data);
 
 });
-
-// =========================
 
 const PORT=
 process.env.PORT || 3000;

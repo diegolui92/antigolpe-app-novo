@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
@@ -12,7 +14,10 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+// =========================
 // DETECTAR TIPO
+// =========================
+
 function detectarTipo(texto) {
   if (texto.includes("@")) return "EMAIL";
 
@@ -34,6 +39,7 @@ function detectarTipo(texto) {
 // =========================
 // VERIFICAR
 // =========================
+
 app.post("/api/verificar", async (req, res) => {
   try {
     const { texto } = req.body;
@@ -46,47 +52,31 @@ app.post("/api/verificar", async (req, res) => {
 
     const tipo = detectarTipo(texto);
 
-    // CONSULTA REPUTAÇÃO
-    const { data: reputacao, error: erroReputacao } = await supabase
+    // CONSULTAR REPUTAÇÃO
+    const { data: reputacao } = await supabase
       .from("reputacoes")
       .select("*")
-      .eq("valor", texto)
+      .eq("conteudo", texto)
       .limit(1);
 
-    if (erroReputacao) {
-      console.log("ERRO REPUTACAO:");
-      console.log(erroReputacao);
-    }
-
-    // CONSULTA DENÚNCIAS
-    const { data: denunciasBanco, error: erroDenuncias } = await supabase
+    // CONSULTAR LISTA NEGRA
+    const { data: denunciasBanco } = await supabase
       .from("lista_negra")
       .select("*")
-      .eq("valor", texto);
+      .eq("conteudo", texto);
 
-    if (erroDenuncias) {
-      console.log("ERRO DENUNCIAS:");
-      console.log(erroDenuncias);
-    }
-
-    // SE EXISTE REPUTAÇÃO
-    if (reputacao && reputacao.length > 0) {
-      return res.json({
-        tipo: reputacao[0].tipo || tipo,
-        status: reputacao[0].status || "SUSPEITO",
-        score: reputacao[0].pontuacao || 0,
-        denuncias: reputacao[0].denuncias || 0,
-        motivo: "Resultado baseado na reputação da comunidade",
-        motivos:
-          denunciasBanco?.map((item) => item.motivo) || [],
-      });
-    }
-
-    // ANÁLISE PADRÃO IA
     let status = "SEGURO";
     let score = 0;
     let motivo = "Nenhum risco encontrado";
 
+    // CASO EXISTA REPUTAÇÃO
+    if (reputacao && reputacao.length > 0) {
+      status = reputacao[0].nivel || "SUSPEITO";
+      score = reputacao[0].score || 0;
+      motivo = "Resultado baseado na comunidade";
+    }
+
+    // ANÁLISE PADRÃO
     if (
       texto.includes(".xyz") ||
       texto.includes("bit.ly") ||
@@ -98,126 +88,128 @@ app.post("/api/verificar", async (req, res) => {
       motivo = "Domínio suspeito";
     }
 
+    // SALVAR VERIFICAÇÃO AUTOMÁTICA
+    await supabase
+      .from("verificacoes")
+      .insert([
+        {
+          conteudo: texto,
+          tipo: tipo,
+          resultado: status,
+          score: score,
+          risco: motivo,
+        }
+      ]);
+
     return res.json({
       tipo,
       status,
       score,
-      denuncias: 0,
+      denuncias: denunciasBanco?.length || 0,
       motivo,
-      motivos: [],
+      motivos:
+        denunciasBanco?.map(item => item.motivo) || []
     });
+
   } catch (error) {
-    console.log("ERRO GERAL VERIFICAR:");
+
     console.log(error);
 
     return res.status(500).json({
-      erro: "Erro ao verificar",
+      erro: "Erro ao verificar"
     });
+
   }
 });
 
 // =========================
 // DENUNCIAR
 // =========================
+
 app.post("/api/denunciar", async (req, res) => {
+
   try {
-    const { valor, motivo, detalhes } = req.body;
 
-    console.log("DENUNCIA RECEBIDA:", valor);
+    const { conteudo, motivo, descricao } = req.body;
 
-    if (!valor) {
+    if (!conteudo) {
       return res.status(400).json({
-        erro: "Valor não enviado",
+        erro: "Conteúdo não enviado"
       });
     }
 
-    const tipo = detectarTipo(valor);
+    const tipo = detectarTipo(conteudo);
 
-    // SALVA LISTA NEGRA
-    const { error: erroLista } = await supabase
+    await supabase
       .from("lista_negra")
       .insert([
         {
-          valor,
+          conteudo,
           tipo,
           motivo,
-          detalhes,
-          risco: "ALTO RISCO",
-        },
+          categoria: descricao,
+          risco: "ALTO"
+        }
       ]);
 
-    if (erroLista) {
-      console.log("ERRO LISTA NEGRA:");
-      console.log(erroLista);
-
-      return res.status(500).json({
-        erro: erroLista.message,
-      });
-    }
-
-    // BUSCA REPUTAÇÃO
-    const { data: reputacao, error: erroBusca } = await supabase
+    const { data: reputacao } = await supabase
       .from("reputacoes")
       .select("*")
-      .eq("valor", valor)
+      .eq("conteudo", conteudo)
       .limit(1);
 
-    if (erroBusca) {
-      console.log("ERRO BUSCA REPUTACAO:");
-      console.log(erroBusca);
-    }
-
-    // ATUALIZA REPUTAÇÃO
     if (reputacao && reputacao.length > 0) {
-      const { error: erroUpdate } = await supabase
+
+      await supabase
         .from("reputacoes")
         .update({
-          denuncias: reputacao[0].denuncias + 1,
-          pontuacao: reputacao[0].pontuacao + 50,
-          status: "ALTO RISCO",
-        })
-        .eq("valor", valor);
+          total_denuncias:
+            reputacao[0].total_denuncias + 1,
 
-      if (erroUpdate) {
-        console.log("ERRO UPDATE:");
-        console.log(erroUpdate);
-      }
+          score:
+            reputacao[0].score + 50,
+
+          nivel: "ALTO RISCO"
+        })
+        .eq("conteudo", conteudo);
+
     } else {
-      const { error: erroInsert } = await supabase
+
+      await supabase
         .from("reputacoes")
         .insert([
           {
-            valor,
+            conteudo,
             tipo,
-            denuncias: 1,
-            pontuacao: 50,
-            status: "ALTO RISCO",
-          },
+            total_denuncias: 1,
+            score: 50,
+            nivel: "ALTO RISCO"
+          }
         ]);
 
-      if (erroInsert) {
-        console.log("ERRO INSERT REPUTACAO:");
-        console.log(erroInsert);
-      }
     }
 
     return res.json({
       sucesso: true,
-      mensagem: "Denúncia registrada",
+      mensagem: "Denúncia registrada"
     });
-  } catch (error) {
-    console.log("ERRO GERAL DENUNCIA:");
+
+  } catch(error){
+
     console.log(error);
 
     return res.status(500).json({
-      erro: "Erro ao denunciar",
+      erro:"Erro ao denunciar"
     });
+
   }
+
 });
 
 // =========================
 // SERVIDOR
 // =========================
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {

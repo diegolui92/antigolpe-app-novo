@@ -1,15 +1,15 @@
 require("dotenv").config();
 
-const express=require("express");
-const cors=require("cors");
-const {createClient}=require("@supabase/supabase-js");
+const express = require("express");
+const cors = require("cors");
+const { createClient } = require("@supabase/supabase-js");
 
-const app=express();
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const supabase=createClient(
+const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
@@ -42,7 +42,7 @@ return "DESCONHECIDO";
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar",async(req,res)=>{
+app.post("/api/verificar", async(req,res)=>{
 
 try{
 
@@ -75,15 +75,9 @@ let motivo="Nenhum risco encontrado";
 
 if(reputacao && reputacao.length>0){
 
-status=
-reputacao[0].nivel ||
-"SUSPEITO";
-
-score=
-reputacao[0].score || 0;
-
-motivo=
-"Resultado baseado na comunidade";
+status=reputacao[0].nivel || "SUSPEITO";
+score=reputacao[0].score || 0;
+motivo="Resultado baseado na comunidade";
 
 }
 
@@ -117,11 +111,8 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:
-denunciasBanco?.length || 0,
-
+denuncias: denunciasBanco?.length || 0,
 motivo,
-
 motivos:
 denunciasBanco?.map(
 item=>item.motivo
@@ -145,7 +136,7 @@ erro:"Erro ao verificar"
 // DENUNCIAR
 // =========================
 
-app.post("/api/denunciar",async(req,res)=>{
+app.post("/api/denunciar", async(req,res)=>{
 
 try{
 
@@ -155,16 +146,7 @@ motivo,
 descricao
 }=req.body;
 
-if(!conteudo){
-
-return res.status(400).json({
-erro:"Conteúdo vazio"
-});
-
-}
-
-const tipo=
-detectarTipo(conteudo);
+const tipo=detectarTipo(conteudo);
 
 await supabase
 .from("lista_negra")
@@ -194,14 +176,15 @@ await supabase
 .update({
 
 total_denuncias:
-(reputacao[0]
-.total_denuncias || 0)+1,
+reputacao[0]
+.total_denuncias+1,
 
 score:
-(reputacao[0]
-.score || 0)+50,
+reputacao[0]
+.score+50,
 
-nivel:"ALTO RISCO"
+nivel:
+"ALTO RISCO"
 
 })
 .eq(
@@ -246,17 +229,17 @@ erro:"Erro ao denunciar"
 });
 
 // =========================
-// FAVORITOS
+// FAVORITAR
 // =========================
 
-app.post("/api/favoritar",async(req,res)=>{
+app.post("/api/favoritar", async(req,res)=>{
 
 try{
 
 const {
 conteudo,
-status,
-tipo
+tipo,
+status
 }=req.body;
 
 await supabase
@@ -264,8 +247,8 @@ await supabase
 .insert([
 {
 conteudo,
-status,
-tipo
+tipo,
+status
 }
 ]);
 
@@ -273,7 +256,7 @@ return res.json({
 
 sucesso:true,
 mensagem:
-"Adicionado aos favoritos"
+"Favorito salvo"
 
 });
 
@@ -289,17 +272,35 @@ erro:"Erro ao favoritar"
 
 });
 
+// =========================
+// LISTAR FAVORITOS
+// =========================
+
 app.get("/api/favoritos",async(req,res)=>{
+
+try{
 
 const {data}=await supabase
 .from("favoritos")
 .select("*")
 .order(
 "id",
-{ascending:false}
+{
+ascending:false
+}
 );
 
 return res.json(data);
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro favoritos"
+});
+
+}
 
 });
 
@@ -309,30 +310,43 @@ return res.json(data);
 
 app.get("/api/historico",async(req,res)=>{
 
+try{
+
 const {data}=await supabase
 .from("verificacoes")
 .select("*")
 .order(
 "id",
-{ascending:false}
+{
+ascending:false
+}
 )
 .limit(10);
 
 return res.json(data);
 
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro histórico"
 });
 
-// =========================
-// SERVIDOR
-// =========================
+}
+
+});
 
 const PORT=
 process.env.PORT || 3000;
 
-app.listen(PORT,()=>{
+app.listen(
+PORT,
+()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"
 );
 
-});
+}
+);

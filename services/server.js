@@ -40,7 +40,7 @@ return "DESCONHECIDO";
 }
 
 // =========================
-// ANÁLISE INTELIGENTE
+// IA LOCAL
 // =========================
 
 function analisarRisco(texto){
@@ -76,33 +76,6 @@ motivos.push(
 
 });
 
-const marcas=[
-"google",
-"youtube",
-"mercadolivre",
-"netflix",
-"facebook",
-"instagram"
-];
-
-marcas.forEach(marca=>{
-
-if(
-texto.toLowerCase().includes(marca)
-&&
-texto.toLowerCase()!==`${marca}.com`
-){
-
-score+=50;
-
-motivos.push(
-"Possível domínio clonado"
-);
-
-}
-
-});
-
 return{
 score,
 motivos
@@ -114,11 +87,14 @@ motivos
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar", async(req,res)=>{
+app.post("/api/verificar",async(req,res)=>{
 
 try{
 
-const {texto}=req.body;
+const {
+texto,
+usuario_id
+}=req.body;
 
 if(!texto){
 
@@ -134,46 +110,18 @@ detectarTipo(texto);
 const analise=
 analisarRisco(texto);
 
-const {data:reputacao}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",texto)
-.limit(1);
-
-const {data:denunciasBanco}=await supabase
-.from("lista_negra")
-.select("*")
-.eq("conteudo",texto);
-
 let score=
 analise.score;
 
 let status=
+score>=30
+?
+"SUSPEITO"
+:
 "SEGURO";
 
 let motivo=
 analise.motivos.join(", ");
-
-if(
-score>=70
-){
-status="ALTO RISCO";
-}
-else if(
-score>=30
-){
-status="SUSPEITO";
-}
-
-if(
-reputacao &&
-reputacao.length>0
-){
-
-score+=
-reputacao[0].score || 0;
-
-}
 
 await supabase
 .from("verificacoes")
@@ -183,7 +131,8 @@ conteudo:texto,
 tipo,
 resultado:status,
 score,
-risco:motivo
+risco:motivo,
+usuario_id
 }
 ]);
 
@@ -192,8 +141,7 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:
-denunciasBanco?.length || 0,
+denuncias:0,
 motivo
 
 });
@@ -203,7 +151,7 @@ motivo
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro ao verificar"
+erro:"Erro verificar"
 });
 
 }
@@ -214,14 +162,15 @@ erro:"Erro ao verificar"
 // DENUNCIAR
 // =========================
 
-app.post("/api/denunciar", async(req,res)=>{
+app.post("/api/denunciar",async(req,res)=>{
 
 try{
 
 const {
 conteudo,
 motivo,
-descricao
+descricao,
+usuario_id
 }=req.body;
 
 const tipo=
@@ -235,59 +184,10 @@ conteudo,
 tipo,
 motivo,
 categoria:descricao,
-risco:"ALTO"
+risco:"ALTO",
+usuario_id
 }
 ]);
-
-const {data:reputacao}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",conteudo)
-.limit(1);
-
-if(
-reputacao &&
-reputacao.length>0
-){
-
-await supabase
-.from("reputacoes")
-.update({
-
-total_denuncias:
-reputacao[0]
-.total_denuncias+1,
-
-score:
-reputacao[0]
-.score+50,
-
-nivel:
-"ALTO RISCO"
-
-})
-.eq(
-"conteudo",
-conteudo
-);
-
-}else{
-
-await supabase
-.from("reputacoes")
-.insert([
-{
-
-conteudo,
-tipo,
-total_denuncias:1,
-score:50,
-nivel:"ALTO RISCO"
-
-}
-]);
-
-}
 
 return res.json({
 
@@ -302,9 +202,52 @@ mensagem:
 console.log(error);
 
 return res.status(500).json({
+erro:"Erro denúncia"
+});
 
-erro:"Erro ao denunciar"
+}
 
+});
+
+// =========================
+// FAVORITAR
+// =========================
+
+app.post("/api/favoritar",async(req,res)=>{
+
+try{
+
+const {
+conteudo,
+status,
+tipo,
+usuario_id
+}=req.body;
+
+await supabase
+.from("favoritos")
+.insert([
+{
+conteudo,
+status,
+tipo,
+usuario_id
+}
+]);
+
+return res.json({
+
+mensagem:
+"Favoritado"
+
+});
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro favorito"
 });
 
 }
@@ -315,39 +258,23 @@ erro:"Erro ao denunciar"
 // FAVORITOS
 // =========================
 
-app.post("/api/favoritar",async(req,res)=>{
-
-const {
-conteudo,
-status,
-tipo
-}=req.body;
-
-await supabase
-.from("favoritos")
-.insert([
-{
-conteudo,
-status,
-tipo
-}
-]);
-
-return res.json({
-mensagem:
-"Favoritado"
-});
-
-});
-
 app.get("/api/favoritos",async(req,res)=>{
+
+const usuario_id=
+req.query.usuario_id;
 
 const {data}=await supabase
 .from("favoritos")
 .select("*")
+.eq(
+"usuario_id",
+usuario_id
+)
 .order(
 "id",
-{ascending:false}
+{
+ascending:false
+}
 );
 
 return res.json(data);
@@ -360,12 +287,21 @@ return res.json(data);
 
 app.get("/api/historico",async(req,res)=>{
 
+const usuario_id=
+req.query.usuario_id;
+
 const {data}=await supabase
 .from("verificacoes")
 .select("*")
+.eq(
+"usuario_id",
+usuario_id
+)
 .order(
 "id",
-{ascending:false}
+{
+ascending:false
+}
 )
 .limit(10);
 

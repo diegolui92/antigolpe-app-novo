@@ -1,29 +1,40 @@
-const API_URL = 'https://antigolpe-api-production.up.railway.app';
-
-export async function verificarGolpe(texto) {
+export async function verificarReputacao(texto) {
   try {
-    const response = await fetch(`${API_URL}/api/verificar`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        texto,
-        api_key: 'ag_d221603c842605a2514d3d837e732d06'
-      }),
-    });
+    const response = await fetch(
+      `https://antigolpe-api-production.up.railway.app/reputacao/${texto}`
+    );
 
     const data = await response.json();
 
-    return data;
-
-  } catch (error) {
-    console.log('ERRO API:', error);
+    console.log("RESPOSTA API:", data);
 
     return {
-      status: 'ERRO',
+      tipo: "SITE",
+
+      status: data.reputacao
+        ? data.reputacao.toUpperCase()
+        : "DESCONHECIDO",
+
+      score:
+        data.reputacao === "Confiável"
+          ? 100
+          : data.reputacao === "Suspeito"
+          ? 40
+          : 10,
+
+      mensagem:
+        data.denuncias > 0
+          ? `${data.denuncias} denúncia(s) encontrada(s)`
+          : "Nenhuma denúncia encontrada",
+    };
+  } catch (error) {
+    console.log("ERRO API:", error);
+
+    return {
+      tipo: "SITE",
+      status: "ERRO",
       score: 0,
-      mensagem: 'Erro ao conectar com servidor'
+      mensagem: "Erro ao conectar com servidor",
     };
   }
 }

@@ -1,113 +1,184 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Alert,
+View,
+Text,
+TextInput,
+TouchableOpacity,
+StyleSheet,
+ScrollView,
+Alert
 } from "react-native";
 
-export default function VerificarScreen() {
+export default function Verificar() {
 
-  const [texto,setTexto]=useState("");
-  const [resultado,setResultado]=useState<any>(null);
-  const [historico,setHistorico]=useState<any[]>([]);
+const [texto,setTexto]=useState("");
+const [resultado,setResultado]=useState<any>(null);
 
-  async function carregarHistorico(){
+const [historico,setHistorico]=useState<any[]>([]);
+const [favoritos,setFavoritos]=useState<any[]>([]);
 
-    try{
+// =========================
+// CARREGAR HISTÓRICO
+// =========================
 
-      const response=await fetch(
-      "https://antigolpe-api-production.up.railway.app/api/historico"
-      );
+async function carregarHistorico(){
 
-      const data=await response.json();
+try{
 
-      setHistorico(data);
+const response=await fetch(
+"https://antigolpe-api-production.up.railway.app/api/historico"
+);
 
-    }catch(error){
+const data=await response.json();
 
-      console.log(error);
+setHistorico(data);
 
-    }
+}catch(error){
 
-  }
+console.log(error);
 
-  async function verificar(){
+}
 
-    try{
+}
 
-      const response=await fetch(
-      "https://antigolpe-api-production.up.railway.app/api/verificar",
-      {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          texto
-        })
-      }
-      );
+// =========================
+// CARREGAR FAVORITOS
+// =========================
 
-      const data=await response.json();
+async function carregarFavoritos(){
 
-      setResultado(data);
+try{
 
-      carregarHistorico();
+const response=await fetch(
+"https://antigolpe-api-production.up.railway.app/api/favoritos"
+);
 
-    }catch(error){
+const data=await response.json();
 
-      Alert.alert(
-      "Erro",
-      "Erro ao verificar"
-      );
+setFavoritos(data);
 
-    }
+}catch(error){
 
-  }
+console.log(error);
 
-  async function denunciar(){
+}
 
-    try{
+}
 
-      const response=await fetch(
-      "https://antigolpe-api-production.up.railway.app/api/denunciar",
-      {
-      method:"POST",
-      headers:{
-      "Content-Type":"application/json"
-      },
-      body:JSON.stringify({
+useEffect(()=>{
 
-      conteudo:texto,
-      motivo:"Denunciado pelo usuário",
-      descricao:"Enviado pelo app"
+carregarHistorico();
+carregarFavoritos();
 
-      })
+},[]);
 
-      }
-      );
 
-      const data=await response.json();
+// =========================
+// VERIFICAR
+// =========================
 
-      Alert.alert(
-      "Sucesso",
-      data.mensagem
-      );
+async function verificar(){
 
-    }catch{
+try{
 
-      Alert.alert(
-      "Erro",
-      "Erro ao denunciar"
-      );
+const response=await fetch(
+"https://antigolpe-api-production.up.railway.app/api/verificar",
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+texto
+})
+}
+);
 
-    }
+const data=await response.json();
 
-  }
+setResultado(data);
+
+carregarHistorico();
+
+}catch{
+
+Alert.alert(
+"Erro",
+"Erro ao verificar"
+);
+
+}
+
+}
+
+// =========================
+// DENUNCIAR
+// =========================
+
+async function denunciar(){
+
+try{
+
+const response=await fetch(
+"https://antigolpe-api-production.up.railway.app/api/denunciar",
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+
+conteudo:texto,
+motivo:"Denunciado pelo usuário",
+descricao:"Enviado pelo app"
+
+})
+}
+);
+
+const data=await response.json();
+
+Alert.alert(
+"Sucesso",
+data.mensagem
+);
+
+const novaConsulta=
+await fetch(
+"https://antigolpe-api-production.up.railway.app/api/verificar",
+{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+texto
+})
+}
+);
+
+const novoResultado=
+await novaConsulta.json();
+
+setResultado(
+novoResultado
+);
+
+}catch{
+
+Alert.alert(
+"Erro",
+"Erro ao denunciar"
+);
+
+}
+
+}
+
+
+// =========================
+// FAVORITAR
+// =========================
 
 async function favoritar(){
 
@@ -143,6 +214,8 @@ Alert.alert(
 data.mensagem
 );
 
+carregarFavoritos();
+
 }catch{
 
 Alert.alert(
@@ -154,9 +227,16 @@ Alert.alert(
 
 }
 
+
+// =========================
+// TELA
+// =========================
+
 return(
 
-<ScrollView style={styles.container}>
+<ScrollView
+style={styles.container}
+>
 
 <Text style={styles.title}>
 AntiGolpe
@@ -164,7 +244,7 @@ AntiGolpe
 
 <TextInput
 style={styles.input}
-placeholder="Digite site, CPF, telefone, PIX..."
+placeholder="Digite site, CPF, telefone..."
 placeholderTextColor="#999"
 multiline
 value={texto}
@@ -193,6 +273,7 @@ Denunciar
 
 </TouchableOpacity>
 
+
 {resultado && (
 
 <View style={styles.resultado}>
@@ -201,12 +282,39 @@ Denunciar
 Tipo: {resultado.tipo}
 </Text>
 
-<Text style={styles.status}>
+<Text
+style={[
+styles.status,
+{
+color:
+resultado.status==="ALTO RISCO"
+?
+"#ff4444"
+:
+resultado.status==="SUSPEITO"
+?
+"#ffaa00"
+:
+"#00ff99"
+}
+]
+}
+>
+
 Status: {resultado.status}
+
 </Text>
 
 <Text style={styles.score}>
 Score: {resultado.score}
+</Text>
+
+<Text style={styles.denuncias}>
+Denúncias: {resultado.denuncias}
+</Text>
+
+<Text style={styles.mensagem}>
+{resultado.motivo}
 </Text>
 
 <TouchableOpacity
@@ -224,42 +332,130 @@ onPress={favoritar}
 
 )}
 
-{historico.length>0 && (
+{
+historico.length>0
+&&
+(
 
-<View style={styles.historicoContainer}>
+<View>
 
-<Text style={styles.subtitulo}>
+<Text
+style={styles.subtitulo}
+>
+
 Últimas consultas
+
 </Text>
 
-{historico.map((item,index)=>(
+{
+
+historico.map(
+(item,index)=>(
 
 <View
 key={index}
-style={styles.historicoItem}
+style={
+styles.historicoItem
+}
 >
 
-<Text style={styles.historicoTexto}>
+<Text
+style={
+styles.historicoTexto
+}
+>
+
 {item.conteudo}
+
 </Text>
 
-<Text style={styles.historicoStatus}>
+<Text
+style={
+styles.historicoStatus
+}
+>
+
 {item.resultado}
+
 </Text>
 
 </View>
 
-))}
-
-</View>
-
-)}
-
-</ScrollView>
-
+)
 )
 
 }
+
+</View>
+
+)
+}
+
+{
+favoritos.length>0
+&&
+(
+
+<View>
+
+<Text
+style={styles.subtitulo}
+>
+
+⭐ Favoritos
+
+</Text>
+
+{
+
+favoritos.map(
+(item,index)=>(
+
+<View
+key={index}
+style={
+styles.historicoItem
+}
+>
+
+<Text
+style={
+styles.historicoTexto
+}
+>
+
+{item.conteudo}
+
+</Text>
+
+<Text
+style={
+styles.historicoStatus
+}
+>
+
+{item.status}
+
+</Text>
+
+</View>
+
+)
+)
+
+}
+
+</View>
+
+)
+}
+
+</ScrollView>
+
+);
+
+}
+
 
 const styles=StyleSheet.create({
 
@@ -315,23 +511,37 @@ fontSize:20
 
 resultado:{
 backgroundColor:"#09152d",
-marginTop:20,
+marginTop:25,
 padding:20,
 borderRadius:20
 },
 
 tipo:{
-color:"#fff"
+color:"#ccc",
+fontSize:18
 },
 
 status:{
-color:"#ffaa00",
-marginTop:10
+fontSize:30,
+fontWeight:"bold",
+marginTop:15
 },
 
 score:{
 color:"#fff",
+fontSize:22,
 marginTop:10
+},
+
+denuncias:{
+color:"#ffcc00",
+fontSize:22,
+marginTop:10
+},
+
+mensagem:{
+color:"#ccc",
+marginTop:15
 },
 
 favoritoButton:{
@@ -346,25 +556,24 @@ textAlign:"center",
 fontWeight:"bold"
 },
 
-historicoContainer:{
-marginTop:30
-},
-
 subtitulo:{
 color:"#fff",
 fontSize:22,
-fontWeight:"bold"
+fontWeight:"bold",
+marginTop:30,
+marginBottom:15
 },
 
 historicoItem:{
 backgroundColor:"#09152d",
 padding:15,
 borderRadius:15,
-marginTop:10
+marginBottom:10
 },
 
 historicoTexto:{
-color:"#fff"
+color:"#fff",
+fontSize:18
 },
 
 historicoStatus:{

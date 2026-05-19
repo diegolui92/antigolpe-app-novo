@@ -13,6 +13,27 @@ export default function VerificarScreen() {
 
   const [texto, setTexto] = useState("");
   const [resultado, setResultado] = useState<any>(null);
+  const [historico, setHistorico] = useState<any[]>([]);
+
+  async function carregarHistorico(){
+
+    try{
+
+      const response=await fetch(
+        "https://antigolpe-api-production.up.railway.app/api/historico"
+      );
+
+      const data=await response.json();
+
+      setHistorico(data);
+
+    }catch(error){
+
+      console.log(error);
+
+    }
+
+  }
 
   async function verificar() {
 
@@ -34,6 +55,8 @@ export default function VerificarScreen() {
       const data = await response.json();
 
       setResultado(data);
+
+      carregarHistorico();
 
     } catch(error){
 
@@ -162,31 +185,36 @@ Denúncias: {resultado.denuncias}
 {resultado.motivo}
 </Text>
 
-{resultado.motivos &&
-resultado.motivos.length>0 && (
-
-<View>
-
-<Text style={styles.subtitulo}>
-Motivos encontrados:
-</Text>
-
-{resultado.motivos.map(
-(item,index)=>(
-<Text
-key={index}
-style={styles.motivo}
->
-
-• {item}
-
-</Text>
-)
-)}
-
 </View>
 
 )}
+
+{historico.length>0 && (
+
+<View style={styles.historicoContainer}>
+
+<Text style={styles.subtitulo}>
+Últimas consultas
+</Text>
+
+{historico.map((item,index)=>(
+
+<View
+key={index}
+style={styles.historicoItem}
+>
+
+<Text style={styles.historicoTexto}>
+{item.conteudo}
+</Text>
+
+<Text style={styles.historicoStatus}>
+{item.resultado}
+</Text>
+
+</View>
+
+))}
 
 </View>
 
@@ -291,15 +319,30 @@ marginBottom:20
 
 subtitulo:{
 color:"#fff",
-fontSize:18,
+fontSize:22,
 fontWeight:"bold",
+marginBottom:15
+},
+
+historicoContainer:{
+marginTop:30
+},
+
+historicoItem:{
+backgroundColor:"#09152d",
+padding:15,
+borderRadius:15,
 marginBottom:10
 },
 
-motivo:{
-color:"#bbb",
-fontSize:16,
-marginBottom:8
+historicoTexto:{
+color:"#fff",
+fontSize:16
+},
+
+historicoStatus:{
+color:"#00ff99",
+marginTop:5
 }
 
 });

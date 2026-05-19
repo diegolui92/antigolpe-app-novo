@@ -10,79 +10,43 @@ app.use(cors());
 app.use(express.json());
 
 const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+process.env.SUPABASE_URL,
+process.env.SUPABASE_ANON_KEY
 );
 
 // =========================
 // DETECTAR TIPO
 // =========================
 
-function detectarTipo(texto) {
-  if (texto.includes("@")) return "EMAIL";
+function detectarTipo(texto){
 
-  if (
-    texto.includes("http") ||
-    texto.includes(".com") ||
-    texto.includes(".xyz")
-  ) {
-    return "SITE";
-  }
+if(texto.includes("@")) return "EMAIL";
 
-  if (texto.length >= 11) {
-    return "TELEFONE/PIX";
-  }
-
-  return "DESCONHECIDO";
+if(
+texto.includes("http") ||
+texto.includes(".com") ||
+texto.includes(".xyz")
+){
+return "SITE";
 }
 
-// =========================
-// HISTÓRICO
-// =========================
+if(texto.length>=11){
+return "TELEFONE/PIX";
+}
 
-app.get("/api/historico", async (req, res) => {
+return "DESCONHECIDO";
 
-  try {
-
-    const { data, error } = await supabase
-      .from("verificacoes")
-      .select("*")
-      .order("criado_em", {
-        ascending:false
-      })
-      .limit(20);
-
-    if(error){
-
-      return res.status(500).json({
-        erro:error.message
-      });
-
-    }
-
-    return res.json(data);
-
-  } catch(error){
-
-    console.log(error);
-
-    return res.status(500).json({
-      erro:"Erro ao carregar histórico"
-    });
-
-  }
-
-});
+}
 
 // =========================
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar", async (req, res) => {
+app.post("/api/verificar", async(req,res)=>{
 
 try{
 
-const { texto }=req.body;
+const {texto}=req.body;
 
 if(!texto){
 
@@ -94,15 +58,13 @@ erro:"Texto não enviado"
 
 const tipo=detectarTipo(texto);
 
-const { data: reputacao }=
-await supabase
+const {data:reputacao}=await supabase
 .from("reputacoes")
 .select("*")
 .eq("conteudo",texto)
 .limit(1);
 
-const { data: denunciasBanco }=
-await supabase
+const {data:denunciasBanco}=await supabase
 .from("lista_negra")
 .select("*")
 .eq("conteudo",texto);
@@ -111,21 +73,11 @@ let status="SEGURO";
 let score=0;
 let motivo="Nenhum risco encontrado";
 
-if(
-reputacao &&
-reputacao.length>0
-){
+if(reputacao && reputacao.length>0){
 
-status=
-reputacao[0].nivel ||
-"SUSPEITO";
-
-score=
-reputacao[0].score ||
-0;
-
-motivo=
-"Resultado baseado na comunidade";
+status=reputacao[0].nivel || "SUSPEITO";
+score=reputacao[0].score || 0;
+motivo="Resultado baseado na comunidade";
 
 }
 
@@ -147,9 +99,9 @@ await supabase
 .insert([
 {
 conteudo:texto,
-tipo:tipo,
+tipo,
 resultado:status,
-score:score,
+score,
 risco:motivo
 }
 ]);
@@ -159,15 +111,8 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:
-denunciasBanco?.length || 0,
-
-motivo,
-
-motivos:
-denunciasBanco?.map(
-item=>item.motivo
-)||[]
+denuncias:denunciasBanco?.length || 0,
+motivo
 
 });
 
@@ -184,94 +129,34 @@ erro:"Erro ao verificar"
 });
 
 // =========================
-// DENUNCIAR
+// FAVORITOS
 // =========================
 
-app.post("/api/denunciar", async (req,res)=>{
+app.post("/api/favoritar", async(req,res)=>{
 
 try{
 
 const {
 conteudo,
-motivo,
-descricao
+status,
+tipo
 }=req.body;
 
-if(!conteudo){
-
-return res.status(400).json({
-erro:"Conteúdo não enviado"
-});
-
-}
-
-const tipo=
-detectarTipo(conteudo);
-
 await supabase
-.from("lista_negra")
+.from("favoritos")
 .insert([
 {
 conteudo,
-tipo,
-motivo,
-categoria:descricao,
-risco:"ALTO"
+status,
+tipo
 }
 ]);
-
-const { data: reputacao }=
-await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",conteudo)
-.limit(1);
-
-if(
-reputacao &&
-reputacao.length>0
-){
-
-await supabase
-.from("reputacoes")
-.update({
-
-total_denuncias:
-reputacao[0]
-.total_denuncias+1,
-
-score:
-reputacao[0]
-.score+50,
-
-nivel:
-"ALTO RISCO"
-
-})
-.eq(
-"conteudo",
-conteudo
-);
-
-}else{
-
-await supabase
-.from("reputacoes")
-.insert([
-{
-conteudo,
-tipo,
-total_denuncias:1,
-score:50,
-nivel:"ALTO RISCO"
-}
-]);
-
-}
 
 return res.json({
+
 sucesso:true,
-mensagem:"Denúncia registrada"
+mensagem:"Adicionado aos favoritos"
+
 });
 
 }catch(error){
@@ -279,7 +164,30 @@ mensagem:"Denúncia registrada"
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro ao denunciar"
+erro:"Erro ao favoritar"
+});
+
+}
+
+});
+
+app.get("/api/favoritos",async(req,res)=>{
+
+try{
+
+const {data}=await supabase
+.from("favoritos")
+.select("*")
+.order("id",{ascending:false});
+
+return res.json(data);
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+erro:"Erro favoritos"
 });
 
 }
@@ -287,11 +195,26 @@ erro:"Erro ao denunciar"
 });
 
 // =========================
+// HISTÓRICO
+// =========================
+
+app.get("/api/historico",async(req,res)=>{
+
+const {data}=await supabase
+.from("verificacoes")
+.select("*")
+.order("id",{ascending:false})
+.limit(10);
+
+return res.json(data);
+
+});
+
+// =========================
 // SERVIDOR
 // =========================
 
-const PORT =
-process.env.PORT || 3000;
+const PORT=process.env.PORT || 3000;
 
 app.listen(PORT,()=>{
 

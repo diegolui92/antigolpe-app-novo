@@ -11,16 +11,16 @@ import {
 
 export default function VerificarScreen() {
 
-  const [texto, setTexto] = useState("");
-  const [resultado, setResultado] = useState<any>(null);
-  const [historico, setHistorico] = useState<any[]>([]);
+  const [texto,setTexto]=useState("");
+  const [resultado,setResultado]=useState<any>(null);
+  const [historico,setHistorico]=useState<any[]>([]);
 
   async function carregarHistorico(){
 
     try{
 
       const response=await fetch(
-        "https://antigolpe-api-production.up.railway.app/api/historico"
+      "https://antigolpe-api-production.up.railway.app/api/historico"
       );
 
       const data=await response.json();
@@ -35,36 +35,34 @@ export default function VerificarScreen() {
 
   }
 
-  async function verificar() {
+  async function verificar(){
 
-    try {
+    try{
 
-      const response = await fetch(
-        "https://antigolpe-api-production.up.railway.app/api/verificar",
-        {
-          method:"POST",
-          headers:{
-            "Content-Type":"application/json",
-          },
-          body:JSON.stringify({
-            texto,
-          }),
-        }
+      const response=await fetch(
+      "https://antigolpe-api-production.up.railway.app/api/verificar",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          texto
+        })
+      }
       );
 
-      const data = await response.json();
+      const data=await response.json();
 
       setResultado(data);
 
       carregarHistorico();
 
-    } catch(error){
-
-      console.log(error);
+    }catch(error){
 
       Alert.alert(
-        "Erro",
-        "Erro ao verificar"
+      "Erro",
+      "Erro ao verificar"
       );
 
     }
@@ -76,37 +74,85 @@ export default function VerificarScreen() {
     try{
 
       const response=await fetch(
-        "https://antigolpe-api-production.up.railway.app/api/denunciar",
-        {
-          method:"POST",
-          headers:{
-            "Content-Type":"application/json",
-          },
-          body:JSON.stringify({
-            conteudo:texto,
-            motivo:"Denunciado pelo usuário",
-            descricao:"Denúncia enviada pelo app"
-          })
-        }
+      "https://antigolpe-api-production.up.railway.app/api/denunciar",
+      {
+      method:"POST",
+      headers:{
+      "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+
+      conteudo:texto,
+      motivo:"Denunciado pelo usuário",
+      descricao:"Enviado pelo app"
+
+      })
+
+      }
       );
 
       const data=await response.json();
 
       Alert.alert(
-        "Sucesso",
-        data.mensagem
+      "Sucesso",
+      data.mensagem
       );
 
-    }catch(error){
+    }catch{
 
       Alert.alert(
-        "Erro",
-        "Erro ao denunciar"
+      "Erro",
+      "Erro ao denunciar"
       );
 
     }
 
   }
+
+async function favoritar(){
+
+try{
+
+const response=await fetch(
+"https://antigolpe-api-production.up.railway.app/api/favoritar",
+{
+
+method:"POST",
+
+headers:{
+"Content-Type":"application/json"
+},
+
+body:JSON.stringify({
+
+conteudo:texto,
+tipo:resultado?.tipo,
+status:resultado?.status
+
+})
+
+}
+
+);
+
+const data=
+await response.json();
+
+Alert.alert(
+"Favoritos",
+data.mensagem
+);
+
+}catch{
+
+Alert.alert(
+"Erro",
+"Erro ao favoritar"
+);
+
+}
+
+}
 
 return(
 
@@ -155,35 +201,24 @@ Denunciar
 Tipo: {resultado.tipo}
 </Text>
 
-<Text
-style={[
-styles.status,
-{
-color:
-resultado.status==="ALTO RISCO"
-? "#ff4444"
-: resultado.status==="SUSPEITO"
-? "#ffaa00"
-: "#00ff99"
-}
-]}
->
-
+<Text style={styles.status}>
 Status: {resultado.status}
-
 </Text>
 
 <Text style={styles.score}>
 Score: {resultado.score}
 </Text>
 
-<Text style={styles.denuncias}>
-Denúncias: {resultado.denuncias}
+<TouchableOpacity
+style={styles.favoritoButton}
+onPress={favoritar}
+>
+
+<Text style={styles.favoritoText}>
+⭐ Favoritar
 </Text>
 
-<Text style={styles.mensagem}>
-{resultado.motivo}
-</Text>
+</TouchableOpacity>
 
 </View>
 
@@ -222,7 +257,7 @@ style={styles.historicoItem}
 
 </ScrollView>
 
-);
+)
 
 }
 
@@ -248,16 +283,15 @@ backgroundColor:"#16233d",
 color:"#fff",
 borderRadius:20,
 padding:20,
-minHeight:150,
-fontSize:18
+minHeight:150
 },
 
 button:{
 backgroundColor:"#00c26e",
 padding:20,
 borderRadius:20,
-alignItems:"center",
-marginTop:20
+marginTop:20,
+alignItems:"center"
 },
 
 buttonText:{
@@ -270,74 +304,67 @@ denunciarButton:{
 backgroundColor:"#ff4444",
 padding:18,
 borderRadius:20,
-alignItems:"center",
-marginTop:12
+marginTop:10,
+alignItems:"center"
 },
 
 denunciarText:{
 color:"#fff",
-fontSize:20,
-fontWeight:"bold"
+fontSize:20
 },
 
 resultado:{
 backgroundColor:"#09152d",
-marginTop:30,
-borderRadius:20,
-padding:20
+marginTop:20,
+padding:20,
+borderRadius:20
 },
 
 tipo:{
-color:"#ccc",
-fontSize:18,
-marginBottom:15
+color:"#fff"
 },
 
 status:{
-fontSize:30,
-fontWeight:"bold",
-marginBottom:15
+color:"#ffaa00",
+marginTop:10
 },
 
 score:{
 color:"#fff",
-fontSize:24,
-marginBottom:10
+marginTop:10
 },
 
-denuncias:{
-color:"#ffcc00",
-fontSize:22,
-marginBottom:15
+favoritoButton:{
+backgroundColor:"#ffcc00",
+padding:15,
+borderRadius:15,
+marginTop:20
 },
 
-mensagem:{
-color:"#ccc",
-fontSize:18,
-marginBottom:20
-},
-
-subtitulo:{
-color:"#fff",
-fontSize:22,
-fontWeight:"bold",
-marginBottom:15
+favoritoText:{
+textAlign:"center",
+fontWeight:"bold"
 },
 
 historicoContainer:{
 marginTop:30
 },
 
+subtitulo:{
+color:"#fff",
+fontSize:22,
+fontWeight:"bold"
+},
+
 historicoItem:{
 backgroundColor:"#09152d",
 padding:15,
 borderRadius:15,
-marginBottom:10
+marginTop:10
 },
 
 historicoTexto:{
-color:"#fff",
-fontSize:16
+color:"#fff"
 },
 
 historicoStatus:{

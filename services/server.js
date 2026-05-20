@@ -10,10 +10,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const supabase = createClient(
+const GOOGLE_SAFE_KEY=
+process.env.GOOGLE_SAFE_BROWSING_KEY;
+
+const URLSCAN_KEY=
+process.env.URLSCAN_API_KEY;
+
+const WHOIS_KEY=
+process.env.WHOIS_API_KEY;
+
+const supabase=createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
+
 
 // =========================
 // DETECTAR TIPO
@@ -21,7 +31,10 @@ process.env.SUPABASE_ANON_KEY
 
 function detectarTipo(texto){
 
-if(texto.includes("@")) return "EMAIL";
+texto=texto.toLowerCase();
+
+if(texto.includes("@"))
+return "EMAIL";
 
 if(
 texto.includes("http") ||
@@ -39,11 +52,14 @@ return "DESCONHECIDO";
 
 }
 
+
 // =========================
-// ANÁLISE INTELIGENTE
+// IA LOCAL
 // =========================
 
 function analisarRisco(texto){
+
+texto=texto.toLowerCase();
 
 let score=0;
 let motivos=[];
@@ -61,10 +77,7 @@ const suspeitos=[
 
 suspeitos.forEach(item=>{
 
-if(
-texto.toLowerCase()
-.includes(item)
-){
+if(texto.includes(item)){
 
 score+=20;
 
@@ -88,9 +101,9 @@ const marcas=[
 marcas.forEach(marca=>{
 
 if(
-texto.toLowerCase().includes(marca)
+texto.includes(marca)
 &&
-texto.toLowerCase()!==`${marca}.com`
+texto!==`${marca}.com`
 ){
 
 score+=50;
@@ -110,11 +123,14 @@ motivos
 
 }
 
+
 // =========================
 // VERIFICAR
 // =========================
 
-app.post("/api/verificar", async(req,res)=>{
+app.post(
+"/api/verificar",
+async(req,res)=>{
 
 try{
 
@@ -131,9 +147,20 @@ erro:"Texto não enviado"
 
 }
 
-const tipo=detectarTipo(texto);
+const tipo=
+detectarTipo(texto);
 
-const analise=analisarRisco(texto);
+const analise=
+analisarRisco(texto);
+
+let score=
+analise.score;
+
+let motivo=
+analise.motivos.join(", ");
+
+
+// reputação local
 
 const {data:reputacao}=await supabase
 .from("reputacoes")
@@ -146,23 +173,6 @@ const {data:denunciasBanco}=await supabase
 .select("*")
 .eq("conteudo",texto);
 
-let score=analise.score;
-
-let status="SEGURO";
-
-let motivo=
-analise.motivos.join(", ");
-
-if(score>=70){
-
-status="ALTO RISCO";
-
-}else if(score>=30){
-
-status="SUSPEITO";
-
-}
-
 if(
 reputacao &&
 reputacao.length>0
@@ -172,6 +182,171 @@ score+=
 reputacao[0].score || 0;
 
 }
+
+
+// =========================
+// IA GLOBAL
+// =========================
+
+if(tipo==="SITE"){
+
+try{
+
+// Google Safe Browsing
+
+const google=await axios.post(
+
+`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
+
+{
+client:{
+clientId:"antigolpe",
+clientVersion:"1.0"
+},
+
+threatInfo:{
+
+threatTypes:[
+"MALWARE",
+"SOCIAL_ENGINEERING",
+"UNWANTED_SOFTWARE"
+],
+
+platformTypes:[
+"ANY_PLATFORM"
+],
+
+threatEntryTypes:[
+"URL"
+],
+
+threatEntries:[
+{
+url:texto
+}
+]
+
+}
+
+}
+
+);
+
+if(
+google.data &&
+google.data.matches
+){
+
+score+=100;
+
+motivo+=
+", Detectado pelo Google Safe Browsing";
+
+}
+
+
+// Whois
+
+try{
+
+const dominio=
+texto
+.replace("https://","")
+.replace("http://","")
+.split("/")[0];
+
+const whois=
+await axios.get(
+
+`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
+
+);
+
+const criado=
+whois.data
+?.WhoisRecord
+?.createdDate;
+
+if(criado){
+
+const dias=
+(
+Date.now()-
+new Date(criado)
+)
+/86400000;
+
+if(dias<30){
+
+score+=50;
+
+motivo+=
+", Domínio muito recente";
+
+}
+
+}
+
+}catch(e){}
+
+
+// Urlscan
+
+try{
+
+await axios.post(
+
+"https://urlscan.io/api/v1/scan/",
+
+{
+url:texto,
+visibility:"public"
+},
+
+{
+headers:{
+"API-Key":
+URLSCAN_KEY
+}
+}
+
+);
+
+motivo+=
+", URL verificada globalmente";
+
+}catch(e){}
+
+}catch(e){
+
+console.log(
+"Erro APIs:",
+e.message
+);
+
+}
+
+}
+
+
+// status final
+
+let status="SEGURO";
+
+if(score>=70){
+
+status=
+"ALTO RISCO";
+
+}else if(score>=30){
+
+status=
+"SUSPEITO";
+
+}
+
+
+// salva histórico
 
 await supabase
 .from("verificacoes")
@@ -201,7 +376,8 @@ motivo
 
 console.log(error);
 
-return res.status(500).json({
+return res.status(500)
+.json({
 erro:"Erro ao verificar"
 });
 
@@ -209,11 +385,14 @@ erro:"Erro ao verificar"
 
 });
 
+
 // =========================
 // DENUNCIAR
 // =========================
 
-app.post("/api/denunciar", async(req,res)=>{
+app.post(
+"/api/denunciar",
+async(req,res)=>{
 
 try{
 
@@ -225,7 +404,9 @@ usuario_id
 }=req.body;
 
 const tipo=
-detectarTipo(conteudo);
+detectarTipo(
+conteudo
+);
 
 await supabase
 .from("lista_negra")
@@ -240,83 +421,33 @@ usuario_id
 }
 ]);
 
-const {data:reputacao}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",conteudo)
-.limit(1);
-
-if(
-reputacao &&
-reputacao.length>0
-){
-
-await supabase
-.from("reputacoes")
-.update({
-
-total_denuncias:
-reputacao[0]
-.total_denuncias+1,
-
-score:
-reputacao[0]
-.score+50,
-
-nivel:
-"ALTO RISCO"
-
-})
-.eq(
-"conteudo",
-conteudo
-);
-
-}else{
-
-await supabase
-.from("reputacoes")
-.insert([
-{
-conteudo,
-tipo,
-total_denuncias:1,
-score:50,
-nivel:"ALTO RISCO"
-}
-]);
-
-}
-
 return res.json({
-
-sucesso:true,
-mensagem:
-"Denúncia registrada"
-
+sucesso:true
 });
 
 }catch(error){
 
 console.log(error);
 
-return res.status(500).json({
-erro:"Erro ao denunciar"
+return res.status(500)
+.json({
+erro:"Erro"
 });
 
 }
 
 });
 
+
 // =========================
 // FAVORITOS
 // =========================
 
-app.post("/api/favoritar",async(req,res)=>{
+app.post(
+"/api/favoritar",
+async(req,res)=>{
 
-try{
-
-const {
+const{
 conteudo,
 status,
 tipo,
@@ -338,54 +469,23 @@ return res.json({
 mensagem:"Favoritado"
 });
 
-}catch(error){
-
-console.log(error);
-
-return res.status(500).json({
-erro:"Erro favorito"
 });
 
-}
-
-});
-
-app.get("/api/favoritos",async(req,res)=>{
-
-const { usuario_id }=req.query;
-
-let query=supabase
-.from("favoritos")
-.select("*")
-.order(
-"id",
-{ascending:false}
-);
-
-if(usuario_id){
-
-query=query.eq(
-"usuario_id",
-usuario_id
-);
-
-}
-
-const {data}=await query;
-
-return res.json(data);
-
-});
 
 // =========================
 // HISTÓRICO
 // =========================
 
-app.get("/api/historico",async(req,res)=>{
+app.get(
+"/api/historico",
+async(req,res)=>{
 
-const { usuario_id }=req.query;
+const{
+usuario_id
+}=req.query;
 
-let query=supabase
+let query=
+supabase
 .from("verificacoes")
 .select("*")
 .order(
@@ -409,10 +509,13 @@ return res.json(data);
 
 });
 
+
 const PORT=
 process.env.PORT || 3000;
 
-app.listen(PORT,()=>{
+app.listen(
+PORT,
+()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"

@@ -2,59 +2,53 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../services/auth';
 
-function AppRoutes(){
+function AppRoutes() {
 
-const { session, loading } = useAuth();
+  const { session, loading } = useAuth();
 
-const router = useRouter();
-const segments = useSegments();
+  const router = useRouter();
+  const segments = useSegments();
 
-useEffect(()=>{
+  useEffect(() => {
 
-if(loading) return;
+    if (loading) return;
 
-const estaEmAuth =
-segments[0]==="login"
-||
-segments[0]==="cadastro";
+    const estaEmAuth =
+      segments[0] === "login" ||
+      segments[0] === "cadastro";
 
-if(!session && !estaEmAuth){
+    // Usuário não logado
+    if (!session && !estaEmAuth) {
+      router.replace("/login");
+    }
 
-router.replace("/login");
+    // Usuário logado
+    if (session && estaEmAuth) {
+      router.replace("/home");
+    }
 
-}
+  }, [
+    session,
+    loading,
+    segments
+  ]);
 
-if(session && estaEmAuth){
-
-router.replace("/home");
-
-}
-
-},[
-session,
-loading
-]);
-
-return(
-<Stack
-screenOptions={{
-headerShown:false
-}}
-/>
-);
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false
+      }}
+    />
+  );
 
 }
 
-export default function Layout(){
+export default function Layout() {
 
-return(
-
-<AuthProvider>
-
-<AppRoutes/>
-
-</AuthProvider>
-
-);
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
+  );
 
 }

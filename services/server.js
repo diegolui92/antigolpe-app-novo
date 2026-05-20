@@ -22,15 +22,19 @@ process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
 
-const ai =
-new GoogleGenAI({
+let ai = null;
+
+if(GEMINI_API_KEY){
+
+ai = new GoogleGenAI({
 apiKey:GEMINI_API_KEY
 });
 
+}
 
-// ========================
+// =========================
 // DETECTAR TIPO
-// ========================
+// =========================
 
 function detectarTipo(texto){
 
@@ -54,10 +58,80 @@ return "DESCONHECIDO";
 }
 
 
+// =========================
+// IA LOCAL (FALLBACK)
+// =========================
 
-// ========================
+function analisarLocal(texto){
+
+texto=texto.toLowerCase();
+
+let score=0;
+let motivos=[];
+
+const suspeitos=[
+".xyz",
+"bit.ly",
+"tinyurl",
+"pix",
+"premio",
+"urgente",
+"bonus",
+"ganhe"
+];
+
+suspeitos.forEach(item=>{
+
+if(texto.includes(item)){
+
+score+=20;
+
+motivos.push(
+`Possui ${item}`
+);
+
+}
+
+});
+
+const marcas=[
+"google",
+"youtube",
+"netflix",
+"facebook",
+"instagram",
+"mercadolivre"
+];
+
+marcas.forEach(marca=>{
+
+if(
+texto.includes(marca)
+&&
+texto!==`${marca}.com`
+){
+
+score+=50;
+
+motivos.push(
+"Possível domínio clonado"
+);
+
+}
+
+});
+
+return{
+score,
+motivos
+};
+
+}
+
+
+// =========================
 // VERIFICAR
-// ========================
+// =========================
 
 app.post(
 "/api/verificar",
@@ -72,10 +146,9 @@ usuario_id
 
 if(!texto){
 
-return res
-.status(400)
+return res.status(400)
 .json({
-erro:"Texto não enviado"
+erro:"Texto vazio"
 });
 
 }
@@ -83,12 +156,18 @@ erro:"Texto não enviado"
 const tipo=
 detectarTipo(texto);
 
-let score=0;
+const local=
+analisarLocal(texto);
 
-let motivos=[];
+let score=
+local.score;
+
+let motivos=[
+...local.motivos
+];
 
 
-// GOOGLE SAFE BROWSING
+// SAFE BROWSING
 
 try{
 
@@ -128,7 +207,7 @@ google.data.matches
 score+=100;
 
 motivos.push(
-"Detectado pelo Google Safe Browsing"
+"Detectado Google Safe Browsing"
 );
 
 }
@@ -136,8 +215,7 @@ motivos.push(
 }catch(e){}
 
 
-
-// COMUNIDADE (peso pequeno)
+// DENÚNCIAS GLOBAIS
 
 const {data:denuncias}=await
 supabase
@@ -151,53 +229,53 @@ texto
 const totalDenuncias=
 denuncias?.length||0;
 
-if(totalDenuncias>0){
+if(totalDenuncias>=3){
 
-score+=5;
+score+=20;
 
 motivos.push(
-`${totalDenuncias} denúncias encontradas`
+"Comunidade encontrou riscos"
 );
 
 }
 
 
+// STATUS PADRÃO
 
-// IA GEMINI
+let status="SEGURO";
+
+if(score>=120){
+
+status="ALTO RISCO";
+
+}else if(score>=50){
+
+status="SUSPEITO";
+
+}
+
+let confianca=90;
+
+
+// GEMINI OPCIONAL
+
+if(ai){
+
+try{
 
 const prompt=`
 
-Você é uma IA antifraude.
-
 Analise:
 
-Conteúdo:
 ${texto}
 
-Tipo:
-${tipo}
+Tipo:${tipo}
 
-Sinais:
+Score:${score}
 
-Score parcial:
-${score}
+Motivos:${motivos.join(",")}
 
-Motivos:
-${motivos.join(",")}
-
-Sua tarefa:
-
-1 Classificar:
-SEGURO
-SUSPEITO
-ALTO RISCO
-
-2 Dar confiança:
-0 a 100
-
-3 Explicar motivo
-
-Responder somente JSON:
+Retorne apenas JSON:
 
 {
 "status":"",
@@ -207,17 +285,43 @@ Responder somente JSON:
 
 `;
 
-const respostaIA =
+const resposta=
 await ai.models.generateContent({
 model:"gemini-2.5-flash",
 contents:prompt
 });
 
 const textoIA=
-respostaIA.text;
+resposta.text
+.replace(/```json/g,"")
+.replace(/```/g,"")
+.trim();
 
-let resultado=
+const resultado=
 JSON.parse(textoIA);
+
+status=
+resultado.status ||
+status;
+
+confianca=
+resultado.confianca ||
+confianca;
+
+motivos.push(
+resultado.motivo
+);
+
+}catch(e){
+
+console.log(
+"Gemini indisponível"
+);
+
+}
+
+}
+
 
 await supabase
 .from("verificacoes")
@@ -225,31 +329,25 @@ await supabase
 {
 conteudo:texto,
 tipo,
-resultado:
-resultado.status,
+resultado:status,
 score,
 risco:
-resultado.motivo,
+motivos.join(", "),
 usuario_id
 }
 ]);
 
+
 return res.json({
 
 tipo,
-status:
-resultado.status,
-
-confianca:
-resultado.confianca,
-
+status,
 score,
-
+confianca,
 denuncias:
 totalDenuncias,
-
 motivo:
-resultado.motivo
+motivos.join(", ")
 
 });
 
@@ -260,8 +358,7 @@ console.log(error);
 return res
 .status(500)
 .json({
-erro:
-"Erro ao verificar"
+erro:"Erro ao verificar"
 });
 
 }
@@ -269,9 +366,92 @@ erro:
 });
 
 
+// =========================
+// DENUNCIAR
+// =========================
+
+app.post(
+"/api/denunciar",
+async(req,res)=>{
+
+try{
+
+const {
+conteudo,
+motivo,
+usuario_id
+}=req.body;
+
+await supabase
+.from("lista_negra")
+.insert([
+{
+conteudo,
+motivo,
+usuario_id
+}
+]);
+
+return res.json({
+sucesso:true
+});
+
+}catch(e){
+
+return res
+.status(500)
+.json({
+erro:"Erro denúncia"
+});
+
+}
+
+});
+
+
+// =========================
+// FAVORITAR
+// =========================
+
+app.post(
+"/api/favoritar",
+async(req,res)=>{
+
+return res.json({
+sucesso:true
+});
+
+});
+
+
+// =========================
+// HISTÓRICO
+// =========================
+
+app.get(
+"/api/historico",
+async(req,res)=>{
+
+const {data}=await
+supabase
+.from("verificacoes")
+.select("*")
+.order(
+"criado_em",
+{
+ascending:false
+}
+)
+.limit(50);
+
+return res.json(data);
+
+});
+
+
 
 const PORT=
-process.env.PORT || 3000;
+process.env.PORT||3000;
 
 app.listen(
 PORT,

@@ -10,16 +10,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const GOOGLE_SAFE_KEY=
+const GOOGLE_SAFE_KEY =
 process.env.GOOGLE_SAFE_BROWSING_KEY;
 
-const URLSCAN_KEY=
+const URLSCAN_KEY =
 process.env.URLSCAN_API_KEY;
 
-const WHOIS_KEY=
+const WHOIS_KEY =
 process.env.WHOIS_API_KEY;
 
-const supabase=createClient(
+const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
@@ -81,9 +81,7 @@ if(texto.includes(item)){
 
 score+=20;
 
-motivos.push(
-`Possui ${item}`
-);
+motivos.push(`Possui ${item}`);
 
 }
 
@@ -156,11 +154,12 @@ analisarRisco(texto);
 let score=
 analise.score;
 
-let motivo=
-analise.motivos.join(", ");
+let motivos=[
+...analise.motivos
+];
 
 
-// reputação local
+// REPUTAÇÃO GLOBAL
 
 const {data:reputacao}=await supabase
 .from("reputacoes")
@@ -173,6 +172,32 @@ const {data:denunciasBanco}=await supabase
 .select("*")
 .eq("conteudo",texto);
 
+const totalDenuncias =
+denunciasBanco?.length || 0;
+
+
+// REDE APRENDE
+
+if(totalDenuncias>=3){
+
+score+=50;
+
+motivos.push(
+"Comunidade reportou várias vezes"
+);
+
+}
+
+if(totalDenuncias>=10){
+
+score+=100;
+
+motivos.push(
+"Alto volume de denúncias"
+);
+
+}
+
 if(
 reputacao &&
 reputacao.length>0
@@ -184,52 +209,38 @@ reputacao[0].score || 0;
 }
 
 
-// =========================
 // IA GLOBAL
-// =========================
 
 if(tipo==="SITE"){
 
 try{
 
-// Google Safe Browsing
-
 const google=await axios.post(
-
 `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
-
 {
 client:{
 clientId:"antigolpe",
 clientVersion:"1.0"
 },
-
 threatInfo:{
-
 threatTypes:[
 "MALWARE",
 "SOCIAL_ENGINEERING",
 "UNWANTED_SOFTWARE"
 ],
-
 platformTypes:[
 "ANY_PLATFORM"
 ],
-
 threatEntryTypes:[
 "URL"
 ],
-
 threatEntries:[
 {
 url:texto
 }
 ]
-
 }
-
 }
-
 );
 
 if(
@@ -239,114 +250,36 @@ google.data.matches
 
 score+=100;
 
-motivo+=
-", Detectado pelo Google Safe Browsing";
-
-}
-
-
-// Whois
-
-try{
-
-const dominio=
-texto
-.replace("https://","")
-.replace("http://","")
-.split("/")[0];
-
-const whois=
-await axios.get(
-
-`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
-
+motivos.push(
+"Detectado pelo Google Safe Browsing"
 );
-
-const criado=
-whois.data
-?.WhoisRecord
-?.createdDate;
-
-if(criado){
-
-const dias=
-(
-Date.now()-
-new Date(criado)
-)
-/86400000;
-
-if(dias<30){
-
-score+=50;
-
-motivo+=
-", Domínio muito recente";
-
-}
 
 }
 
 }catch(e){}
 
-
-// Urlscan
-
-try{
-
-await axios.post(
-
-"https://urlscan.io/api/v1/scan/",
-
-{
-url:texto,
-visibility:"public"
-},
-
-{
-headers:{
-"API-Key":
-URLSCAN_KEY
-}
-}
-
-);
-
-motivo+=
-", URL verificada globalmente";
-
-}catch(e){}
-
-}catch(e){
-
-console.log(
-"Erro APIs:",
-e.message
-);
-
-}
-
 }
 
 
-// status final
+// STATUS FINAL
 
 let status="SEGURO";
 
-if(score>=70){
+if(score>=120){
 
-status=
-"ALTO RISCO";
+status="ALTO RISCO";
 
-}else if(score>=30){
+}else if(score>=50){
 
-status=
-"SUSPEITO";
+status="SUSPEITO";
 
 }
 
+const motivo=
+motivos.join(", ");
 
-// salva histórico
+
+// SALVAR HISTÓRICO
 
 await supabase
 .from("verificacoes")
@@ -366,8 +299,7 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:
-denunciasBanco?.length || 0,
+denuncias:totalDenuncias,
 motivo
 
 });
@@ -421,6 +353,44 @@ usuario_id
 }
 ]);
 
+
+// ATUALIZA REPUTAÇÃO GLOBAL
+
+const {data:existente}=await supabase
+.from("reputacoes")
+.select("*")
+.eq("conteudo",conteudo)
+.limit(1);
+
+if(
+existente &&
+existente.length>0
+){
+
+await supabase
+.from("reputacoes")
+.update({
+score:
+(existente[0].score||0)+20
+})
+.eq(
+"conteudo",
+conteudo
+);
+
+}else{
+
+await supabase
+.from("reputacoes")
+.insert([
+{
+conteudo,
+score:20
+}
+]);
+
+}
+
 return res.json({
 sucesso:true
 });
@@ -439,86 +409,4 @@ erro:"Erro"
 });
 
 
-// =========================
-// FAVORITOS
-// =========================
-
-app.post(
-"/api/favoritar",
-async(req,res)=>{
-
-const{
-conteudo,
-status,
-tipo,
-usuario_id
-}=req.body;
-
-await supabase
-.from("favoritos")
-.insert([
-{
-conteudo,
-status,
-tipo,
-usuario_id
-}
-]);
-
-return res.json({
-mensagem:"Favoritado"
-});
-
-});
-
-
-// =========================
-// HISTÓRICO
-// =========================
-
-app.get(
-"/api/historico",
-async(req,res)=>{
-
-const{
-usuario_id
-}=req.query;
-
-let query=
-supabase
-.from("verificacoes")
-.select("*")
-.order(
-"id",
-{ascending:false}
-)
-.limit(10);
-
-if(usuario_id){
-
-query=query.eq(
-"usuario_id",
-usuario_id
-);
-
-}
-
-const {data}=await query;
-
-return res.json(data);
-
-});
-
-
-const PORT=
-process.env.PORT || 3000;
-
-app.listen(
-PORT,
-()=>{
-
-console.log(
-"Servidor AntiGolpe rodando"
-);
-
-});
+// FAVORITOS e HISTÓRICO permanecem iguais

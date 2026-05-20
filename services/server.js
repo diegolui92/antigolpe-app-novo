@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
+const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 
@@ -13,21 +14,23 @@ app.use(express.json());
 const GOOGLE_SAFE_KEY =
 process.env.GOOGLE_SAFE_BROWSING_KEY;
 
-const URLSCAN_KEY =
-process.env.URLSCAN_API_KEY;
-
-const WHOIS_KEY =
-process.env.WHOIS_API_KEY;
+const GEMINI_API_KEY =
+process.env.GEMINI_API_KEY;
 
 const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
 
+const ai =
+new GoogleGenAI({
+apiKey:GEMINI_API_KEY
+});
 
-// =========================
+
+// ========================
 // DETECTAR TIPO
-// =========================
+// ========================
 
 function detectarTipo(texto){
 
@@ -38,93 +41,23 @@ return "EMAIL";
 
 if(
 texto.includes("http") ||
-texto.includes(".com") ||
-texto.includes(".xyz")
+texto.includes(".")
 ){
 return "SITE";
 }
 
-if(texto.length>=11){
+if(texto.length>=11)
 return "TELEFONE/PIX";
-}
 
 return "DESCONHECIDO";
 
 }
 
 
-// =========================
-// IA LOCAL
-// =========================
 
-function analisarRisco(texto){
-
-texto=texto.toLowerCase();
-
-let score=0;
-let motivos=[];
-
-const suspeitos=[
-".xyz",
-"bit.ly",
-"tinyurl",
-"ganhe",
-"pix",
-"bonus",
-"premio",
-"urgente"
-];
-
-suspeitos.forEach(item=>{
-
-if(texto.includes(item)){
-
-score+=20;
-
-motivos.push(`Possui ${item}`);
-
-}
-
-});
-
-const marcas=[
-"google",
-"youtube",
-"mercadolivre",
-"netflix",
-"facebook",
-"instagram"
-];
-
-marcas.forEach(marca=>{
-
-if(
-texto.includes(marca)
-&&
-texto!==`${marca}.com`
-){
-
-score+=50;
-
-motivos.push(
-"Possível domínio clonado"
-);
-
-}
-
-});
-
-return{
-score,
-motivos
-};
-
-}
-
-
-// =========================
+// ========================
 // VERIFICAR
-// =========================
+// ========================
 
 app.post(
 "/api/verificar",
@@ -139,7 +72,9 @@ usuario_id
 
 if(!texto){
 
-return res.status(400).json({
+return res
+.status(400)
+.json({
 erro:"Texto não enviado"
 });
 
@@ -148,70 +83,12 @@ erro:"Texto não enviado"
 const tipo=
 detectarTipo(texto);
 
-const analise=
-analisarRisco(texto);
+let score=0;
 
-let score=
-analise.score;
-
-let motivos=[
-...analise.motivos
-];
+let motivos=[];
 
 
-// REPUTAÇÃO GLOBAL
-
-const {data:reputacao}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",texto)
-.limit(1);
-
-const {data:denunciasBanco}=await supabase
-.from("lista_negra")
-.select("*")
-.eq("conteudo",texto);
-
-const totalDenuncias =
-denunciasBanco?.length || 0;
-
-
-// REDE APRENDE
-
-if(totalDenuncias>=3){
-
-score+=50;
-
-motivos.push(
-"Comunidade reportou várias vezes"
-);
-
-}
-
-if(totalDenuncias>=10){
-
-score+=100;
-
-motivos.push(
-"Alto volume de denúncias"
-);
-
-}
-
-if(
-reputacao &&
-reputacao.length>0
-){
-
-score+=
-reputacao[0].score || 0;
-
-}
-
-
-// IA GLOBAL
-
-if(tipo==="SITE"){
+// GOOGLE SAFE BROWSING
 
 try{
 
@@ -258,28 +135,89 @@ motivos.push(
 
 }catch(e){}
 
+
+
+// COMUNIDADE (peso pequeno)
+
+const {data:denuncias}=await
+supabase
+.from("lista_negra")
+.select("*")
+.eq(
+"conteudo",
+texto
+);
+
+const totalDenuncias=
+denuncias?.length||0;
+
+if(totalDenuncias>0){
+
+score+=5;
+
+motivos.push(
+`${totalDenuncias} denúncias encontradas`
+);
+
 }
 
 
-// STATUS FINAL
 
-let status="SEGURO";
+// IA GEMINI
 
-if(score>=120){
+const prompt=`
 
-status="ALTO RISCO";
+Você é uma IA antifraude.
 
-}else if(score>=50){
+Analise:
 
-status="SUSPEITO";
+Conteúdo:
+${texto}
 
+Tipo:
+${tipo}
+
+Sinais:
+
+Score parcial:
+${score}
+
+Motivos:
+${motivos.join(",")}
+
+Sua tarefa:
+
+1 Classificar:
+SEGURO
+SUSPEITO
+ALTO RISCO
+
+2 Dar confiança:
+0 a 100
+
+3 Explicar motivo
+
+Responder somente JSON:
+
+{
+"status":"",
+"confianca":0,
+"motivo":""
 }
 
-const motivo=
-motivos.join(", ");
+`;
 
+const respostaIA =
+await ai.models.generateContent({
+model:"gemini-2.5-flash",
+contents:prompt
+});
 
-// SALVAR HISTÓRICO
+const textoIA=
+respostaIA.text;
+
+let resultado=
+JSON.parse(textoIA);
 
 await supabase
 .from("verificacoes")
@@ -287,9 +225,11 @@ await supabase
 {
 conteudo:texto,
 tipo,
-resultado:status,
+resultado:
+resultado.status,
 score,
-risco:motivo,
+risco:
+resultado.motivo,
 usuario_id
 }
 ]);
@@ -297,10 +237,19 @@ usuario_id
 return res.json({
 
 tipo,
-status,
+status:
+resultado.status,
+
+confianca:
+resultado.confianca,
+
 score,
-denuncias:totalDenuncias,
-motivo
+
+denuncias:
+totalDenuncias,
+
+motivo:
+resultado.motivo
 
 });
 
@@ -308,9 +257,11 @@ motivo
 
 console.log(error);
 
-return res.status(500)
+return res
+.status(500)
 .json({
-erro:"Erro ao verificar"
+erro:
+"Erro ao verificar"
 });
 
 }
@@ -318,95 +269,17 @@ erro:"Erro ao verificar"
 });
 
 
-// =========================
-// DENUNCIAR
-// =========================
 
-app.post(
-"/api/denunciar",
-async(req,res)=>{
+const PORT=
+process.env.PORT || 3000;
 
-try{
+app.listen(
+PORT,
+()=>{
 
-const {
-conteudo,
-motivo,
-descricao,
-usuario_id
-}=req.body;
-
-const tipo=
-detectarTipo(
-conteudo
+console.log(
+"Servidor AntiGolpe rodando"
 );
 
-await supabase
-.from("lista_negra")
-.insert([
-{
-conteudo,
-tipo,
-motivo,
-categoria:descricao,
-risco:"ALTO",
-usuario_id
 }
-]);
-
-
-// ATUALIZA REPUTAÇÃO GLOBAL
-
-const {data:existente}=await supabase
-.from("reputacoes")
-.select("*")
-.eq("conteudo",conteudo)
-.limit(1);
-
-if(
-existente &&
-existente.length>0
-){
-
-await supabase
-.from("reputacoes")
-.update({
-score:
-(existente[0].score||0)+20
-})
-.eq(
-"conteudo",
-conteudo
 );
-
-}else{
-
-await supabase
-.from("reputacoes")
-.insert([
-{
-conteudo,
-score:20
-}
-]);
-
-}
-
-return res.json({
-sucesso:true
-});
-
-}catch(error){
-
-console.log(error);
-
-return res.status(500)
-.json({
-erro:"Erro"
-});
-
-}
-
-});
-
-
-// FAVORITOS e HISTÓRICO permanecem iguais

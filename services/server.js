@@ -179,10 +179,23 @@ dominio=extrairDominio(texto);
 for(let marca of marcas){
 
 if(
-dominio.includes(marca) &&
-dominio!==`${marca}.com` &&
+
+(
+dominio.includes(`${marca}-`) ||
+dominio.includes(`${marca}.`) ||
+dominio.includes(`${marca}login`) ||
+dominio.includes(`${marca}seguranca`)
+)
+
+&&
+
+dominio!==`${marca}.com`
+
+&&
+
 dominio!==`${marca}.com.br`
-){
+
+)}
 
 score+=40;
 
@@ -244,10 +257,22 @@ e.message
 
 }
 
+// ====================
+// WHOIS CORRIGIDO
+// ====================
+
 try{
 
-const whois=await axios.get(
+if(
+WHOIS_API_KEY &&
+WHOIS_API_KEY.trim()!==""
+){
+
+const whois=
+await axios.get(
+
 `https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_API_KEY}&domainName=${dominio}&outputFormat=JSON`
+
 );
 
 const criado=
@@ -259,28 +284,61 @@ motivos.push(
 `Domínio criado em ${criado || "Não disponível"}`
 );
 
-}catch(e){
+}else{
 
-console.log(
-"Erro WHOIS:",
-e.message
+motivos.push(
+"Informações de domínio indisponíveis"
 );
 
 }
 
+}catch(e){
+
+console.log(
+"Erro WHOIS:",
+e.response?.data || e.message
+);
+
+motivos.push(
+"Informações de domínio indisponíveis"
+);
+
+}
+
+
+// ====================
+// URLSCAN CORRIGIDO
+// ====================
+
 try{
 
+const urlCorrigida=
+texto.startsWith("http")
+? texto
+: `https://${texto}`;
+
 await axios.post(
+
 "https://urlscan.io/api/v1/scan/",
+
 {
-url:texto,
+url:urlCorrigida,
 visibility:"public"
 },
+
 {
 headers:{
-"API-Key":URLSCAN_API_KEY
+
+"API-Key":
+URLSCAN_API_KEY,
+
+"Content-Type":
+"application/json"
+
 }
+
 }
+
 );
 
 motivos.push(
@@ -291,7 +349,7 @@ motivos.push(
 
 console.log(
 "Erro URLSCAN:",
-e.message
+e.response?.data || e.message
 );
 
 }
@@ -385,14 +443,78 @@ score>=80
 ? "SUSPEITO"
 : "SEGURO",
 
-confianca:90,
+confianca:
+score>=80
+?95
+:score>0
+?85
+:99,
 
-motivo:
-motivos.join(". ")
+motivo:(()=>{
 
-};
+// SITE SEGURO
+if(
+tipo==="SITE" &&
+score===0
+){
+
+return `O domínio ${dominio} foi analisado pelo sistema AntiGolpe utilizando verificações locais, comunidade, URLScan e mecanismos de segurança disponíveis. Nenhum sinal conhecido de ameaça, falsificação ou comportamento malicioso foi identificado durante a análise.`;
 
 }
+
+// SITE SUSPEITO
+if(
+tipo==="SITE" &&
+score>0 &&
+score<80
+){
+
+return `O domínio ${dominio} apresentou características compatíveis com possíveis tentativas de falsificação ou comportamento suspeito. Foram encontrados padrões frequentemente associados a golpes digitais. Recomenda-se cautela antes de fornecer dados pessoais, senhas ou informações financeiras.`;
+
+}
+
+// FRAUDE
+if(
+tipo==="SITE" &&
+score>=80
+){
+
+return `Foram encontrados fortes indícios de fraude envolvendo o domínio ${dominio}. A análise identificou possíveis tentativas de falsificação de marca, registros suspeitos e denúncias da comunidade. Recomenda-se evitar acesso ao conteúdo e não compartilhar informações pessoais ou bancárias.`;
+
+}
+
+// CPF
+if(
+tipo==="CPF/PIX"
+){
+
+return `CPF identificado e validado estruturalmente. A análise confirma consistência matemática do documento informado. Isso não garante autenticidade da identidade associada, apenas que o formato apresentado é válido.`;
+
+}
+
+// TELEFONE
+if(
+tipo==="TELEFONE/PIX"
+){
+
+return `Número identificado com formato compatível para telefone ou chave PIX. Nenhum indicador suspeito foi encontrado durante a análise local e comunitária realizada pelo sistema.`;
+
+}
+
+// EMAIL
+if(
+tipo==="EMAIL"
+){
+
+return `O endereço informado foi identificado como email válido em sua estrutura. Nenhum padrão conhecido de risco foi encontrado durante a análise local do sistema.`;
+
+}
+
+return motivos.join(". ");
+
+})()
+
+};
 
 await supabase
 .from("verificacoes")

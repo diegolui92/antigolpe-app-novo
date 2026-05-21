@@ -126,7 +126,7 @@ google.data &&
 google.data.matches
 ){
 
-score +=100;
+score += 100;
 
 motivos.push(
 "Detectado pelo Google Safe Browsing"
@@ -150,7 +150,7 @@ e.message
 
 const {
 data:denuncias
-}=await supabase
+} = await supabase
 .from("lista_negra")
 .select("*")
 .eq(
@@ -158,12 +158,12 @@ data:denuncias
 texto
 );
 
-const totalDenuncias=
+const totalDenuncias =
 denuncias?.length || 0;
 
-if(totalDenuncias>0){
+if(totalDenuncias > 0){
 
-score +=5;
+score += 5;
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
@@ -173,10 +173,14 @@ motivos.push(
 
 
 // ========================
-// GEMINI
+// IA GEMINI
 // ========================
 
-const prompt=`
+let resultado;
+
+try{
+
+const prompt = `
 
 Você é uma IA antifraude.
 
@@ -210,42 +214,43 @@ Retorne SOMENTE JSON:
 
 `;
 
-const respostaIA=
+const respostaIA =
 await ai.models.generateContent({
 model:"gemini-2.5-flash",
 contents:prompt
 });
 
-const textoIA=
+const textoIA =
 respostaIA.text;
 
-let jsonLimpo=
-textoIA
+let jsonLimpo = textoIA
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim();
 
-let resultado;
-
-try{
-
-resultado=
-JSON.parse(
-jsonLimpo
-);
+resultado =
+JSON.parse(jsonLimpo);
 
 }catch(error){
 
 console.log(
-"Erro JSON Gemini:",
-error
+"Erro Gemini:",
+error.message
 );
 
 resultado={
 
-status:"SUSPEITO",
-confianca:50,
-motivo:"IA retornou formato inválido"
+status:
+score>=100
+?"ALTO RISCO"
+:score>0
+?"SUSPEITO"
+:"SEGURO",
+
+confianca:70,
+
+motivo:
+"Gemini indisponível temporariamente. Resultado baseado em análise local."
 
 };
 
@@ -253,7 +258,7 @@ motivo:"IA retornou formato inválido"
 
 
 // ========================
-// HISTÓRICO
+// SALVAR HISTÓRICO
 // ========================
 
 await supabase
@@ -270,6 +275,11 @@ resultado.motivo,
 usuario_id
 }
 ]);
+
+
+// ========================
+// RETORNO APP
+// ========================
 
 return res.json({
 
@@ -409,7 +419,7 @@ erro:"Erro ao favoritar"
 // SERVIDOR
 // ========================
 
-const PORT=
+const PORT =
 process.env.PORT || 3000;
 
 app.listen(

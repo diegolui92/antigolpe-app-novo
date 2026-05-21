@@ -23,12 +23,13 @@ process.env.URLSCAN_API_KEY;
 const WHOIS_API_KEY =
 process.env.WHOIS_API_KEY;
 
-const supabase=createClient(
+const supabase =
+createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
 
-const ai=
+const ai =
 new GoogleGenAI({
 apiKey:GEMINI_API_KEY
 });
@@ -67,21 +68,24 @@ return "DESCONHECIDO";
 function extrairDominio(url){
 
 return url
-.replace("https://","")
-.replace("http://","")
-.replace("www.","")
-.split("/")[0];
+.toLowerCase()
+.replace(/^https?:\/\//,"")
+.replace(/^www\./,"")
+.split("/")[0]
+.trim();
 
 }
 
 
+
 // ========================
-// DETECTOR DE FALSIFICAÇÃO
+// DETECTAR FALSIFICAÇÃO
 // ========================
 
 function detectarTyposquatting(dominio){
 
 const marcas=[
+
 "google",
 "youtube",
 "facebook",
@@ -90,29 +94,37 @@ const marcas=[
 "mercadolivre",
 "mercadopago",
 "whatsapp",
-"gov",
-"amazon"
+"amazon",
+"gov"
+
 ];
 
-let suspeito=false;
+for(let marca of marcas){
 
-marcas.forEach(marca=>{
+const legitimos=[
+
+`${marca}.com`,
+`${marca}.com.br`
+
+];
 
 if(
+
 dominio.includes(marca)
 &&
-dominio!==`${marca}.com`
-&&
-dominio!==`${marca}.com.br`
+!legitimos.includes(
+dominio
+)
+
 ){
 
-suspeito=true;
+return true;
 
 }
 
-});
+}
 
-return suspeito;
+return false;
 
 }
 
@@ -135,7 +147,9 @@ usuario_id
 
 if(!texto){
 
-return res.status(400).json({
+return res
+.status(400)
+.json({
 erro:"Texto não enviado"
 });
 
@@ -157,7 +171,7 @@ let idadeDominio=
 
 
 // ========================
-// TYPOSQUATTING
+// DETECTAR DOMÍNIO FALSO
 // ========================
 
 if(
@@ -183,7 +197,7 @@ motivos.push(
 
 
 // ========================
-// SAFE BROWSING
+// GOOGLE SAFE BROWSING
 // ========================
 
 try{
@@ -236,6 +250,7 @@ motivos.push(
 }catch(e){
 
 console.log(
+"Erro Google:",
 e.message
 );
 
@@ -295,6 +310,7 @@ motivos.push(
 }catch(e){
 
 console.log(
+"Erro WHOIS:",
 e.message
 );
 
@@ -325,9 +341,12 @@ visibility:"public"
 
 {
 headers:{
+
 "API-Key":
 URLSCAN_API_KEY
+
 }
+
 }
 
 );
@@ -339,6 +358,7 @@ motivos.push(
 }catch(e){
 
 console.log(
+"Erro URLSCAN:",
 e.message
 );
 
@@ -375,7 +395,7 @@ totalDenuncias*5
 );
 
 motivos.push(
-`${totalDenuncias} denúncias`
+`${totalDenuncias} denúncias encontradas`
 );
 
 }
@@ -403,9 +423,6 @@ ${texto}
 Score:
 ${score}
 
-Idade domínio:
-${idadeDominio}
-
 Motivos:
 ${motivos.join(",")}
 
@@ -419,7 +436,7 @@ Retorne:
 
 `;
 
-const resposta=
+const respostaIA=
 await ai.models.generateContent({
 
 model:"gemini-2.5-flash",
@@ -428,7 +445,7 @@ contents:prompt
 });
 
 let textoIA=
-resposta.text;
+respostaIA.text;
 
 textoIA=
 textoIA
@@ -441,7 +458,12 @@ JSON.parse(
 textoIA
 );
 
-}catch{
+}catch(error){
+
+console.log(
+"Erro Gemini:",
+error.message
+);
 
 resultado={
 
@@ -462,11 +484,11 @@ tipo==="SITE"
 
 :tipo==="EMAIL"
 
-?`Email analisado com score ${score}. ${motivos.join(". ")}`
+?`Email analisado. ${motivos.join(". ")}`
 
 :tipo==="TELEFONE/PIX"
 
-?`Telefone/PIX analisado com score ${score}. ${motivos.join(". ")}`
+?`Telefone/PIX analisado. ${motivos.join(". ")}`
 
 :"Análise local"
 
@@ -513,10 +535,10 @@ resultado.motivo
 
 });
 
-
 }catch(error){
 
 console.log(
+"ERRO GERAL:",
 error
 );
 
@@ -562,7 +584,7 @@ return res.json({
 sucesso:true
 });
 
-}catch{
+}catch(error){
 
 return res
 .status(500)
@@ -574,7 +596,6 @@ erro:"Erro denunciar"
 
 }
 );
-
 
 
 
@@ -606,7 +627,7 @@ return res.json({
 sucesso:true
 });
 
-}catch{
+}catch(error){
 
 return res
 .status(500)

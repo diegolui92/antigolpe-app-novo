@@ -613,7 +613,7 @@ return res.json({
 sucesso:true
 });
 
-}catch{
+}catch(erro){
 
 return res.status(500).json({
 erro:"Erro favoritar"

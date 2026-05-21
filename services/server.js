@@ -32,10 +32,6 @@ const ai=new GoogleGenAI({
 apiKey:GEMINI_API_KEY
 });
 
-// =========================
-// VALIDAR CPF
-// =========================
-
 function validarCPF(cpf){
 
 cpf=cpf.replace(/\D/g,'');
@@ -155,27 +151,11 @@ motivos
 
 }
 
-// =========================
-// VERIFICAR
-// =========================
-
 app.post("/api/verificar",async(req,res)=>{
 
 try{
 
-const {
-texto,
-usuario_id
-}=req.body;
-
-if(!texto){
-
-return res.status(400)
-.json({
-erro:"Texto não enviado"
-});
-
-}
+const {texto,usuario_id}=req.body;
 
 const tipo=
 detectarTipo(texto);
@@ -186,13 +166,28 @@ analisarRisco(texto);
 let score=
 analise.score;
 
-let motivo=
-analise.motivos.join(", ");
+let motivos=[
+...analise.motivos
+];
 
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
 .select("*")
 .eq("conteudo",texto);
+
+const totalDenuncias=
+denunciasBanco?.length||0;
+
+if(totalDenuncias>0){
+
+score+=
+(totalDenuncias*10);
+
+motivos.push(
+`${totalDenuncias} denúncias encontradas`
+);
+
+}
 
 if(tipo==="SITE"){
 
@@ -237,8 +232,9 @@ google.data.matches
 
 score+=100;
 
-motivo+=
-", Detectado pelo Google Safe Browsing";
+motivos.push(
+"Detectado pelo Google Safe Browsing"
+);
 
 }
 
@@ -247,6 +243,8 @@ motivo+=
 }
 
 let status="SEGURO";
+let confianca=99;
+let motivoFinal="";
 
 try{
 
@@ -264,7 +262,7 @@ Score:
 ${score}
 
 Motivos:
-${motivo}
+${motivos.join(",")}
 
 Retorne JSON:
 
@@ -295,37 +293,28 @@ JSON.parse(textoIA);
 status=
 resultado.status;
 
-motivo=
+motivoFinal=
 resultado.motivo;
 
 }catch{
 
-// FALLBACK
-
 if(score>=70){
 
 status="ALTO RISCO";
+confianca=95;
 
 }else if(score>=30){
 
 status="SUSPEITO";
+confianca=85;
+
+}else{
+
+confianca=99;
 
 }
 
-if(tipo==="CPF"){
-motivo=
-"CPF identificado e validado estruturalmente.";
-}
-
-if(tipo==="TELEFONE"){
-motivo=
-"Número identificado como telefone.";
-}
-
-if(tipo==="PIX"){
-motivo=
-"Chave PIX identificada.";
-}
+motivoFinal=motivos.join(". ");
 
 }
 
@@ -337,7 +326,7 @@ conteudo:texto,
 tipo,
 resultado:status,
 score,
-risco:motivo,
+risco:motivoFinal,
 usuario_id
 
 }]);
@@ -347,9 +336,9 @@ return res.json({
 tipo,
 status,
 score,
-denuncias:
-denunciasBanco?.length||0,
-motivo
+confianca,
+denuncias:totalDenuncias,
+motivo:motivoFinal
 
 });
 
@@ -369,9 +358,7 @@ erro:"Erro ao verificar"
 const PORT=
 process.env.PORT||3000;
 
-app.listen(
-PORT,
-()=>{
+app.listen(PORT,()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"

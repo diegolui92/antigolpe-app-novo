@@ -23,8 +23,7 @@ process.env.URLSCAN_API_KEY;
 const WHOIS_API_KEY =
 process.env.WHOIS_API_KEY;
 
-const supabase =
-createClient(
+const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
@@ -41,20 +40,31 @@ apiKey:GEMINI_API_KEY
 
 function detectarTipo(texto){
 
-texto=texto.toLowerCase();
+texto=texto.toLowerCase().trim();
 
-if(texto.includes("@"))
+const emailRegex =
+/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+if(emailRegex.test(texto))
 return "EMAIL";
 
 if(
-texto.includes("http")||
-texto.includes(".")
+texto.includes("http") ||
+texto.includes(".com") ||
+texto.includes(".com.br") ||
+texto.includes(".net") ||
+texto.includes(".org") ||
+texto.includes(".xyz")
 ){
 return "SITE";
 }
 
-if(texto.length>=11)
+const numero=
+texto.replace(/\D/g,"");
+
+if(numero.length>=11){
 return "TELEFONE/PIX";
+}
 
 return "DESCONHECIDO";
 
@@ -62,26 +72,26 @@ return "DESCONHECIDO";
 
 
 // ========================
-// EXTRAIR DOMÍNIO
+// EXTRAIR DOMINIO
 // ========================
 
 function extrairDominio(url){
 
 return url
-.toLowerCase()
-.replace(/^https?:\/\//,"")
-.replace(/^www\./,"")
+.replace("https://","")
+.replace("http://","")
+.replace("www.","")
 .split("/")[0]
-.trim();
+.toLowerCase();
 
 }
 
 
 // ========================
-// DOMÍNIOS FALSOS
+// DETECTAR MARCA FALSA
 // ========================
 
-function detectarTyposquatting(dominio){
+function detectarMarcaFalsa(dominio){
 
 const marcas=[
 
@@ -89,26 +99,24 @@ const marcas=[
 "youtube",
 "facebook",
 "instagram",
-"nubank",
-"mercadopago",
 "mercadolivre",
-"whatsapp",
-"amazon"
+"netflix",
+"nubank",
+"paypal"
 
 ];
 
 for(let marca of marcas){
 
-if(dominio.includes(marca)){
+if(
+dominio.includes(marca)
+){
 
-const dominioLimpo=
-dominio
-.replace(".com.br","")
-.replace(".com","");
+const dominioOficial=
+`${marca}.com`;
 
 if(
-dominio!==`${marca}.com`
-&&
+dominio!==dominioOficial &&
 dominio!==`${marca}.com.br`
 ){
 
@@ -142,7 +150,9 @@ usuario_id
 
 if(!texto){
 
-return res.status(400).json({
+return res
+.status(400)
+.json({
 erro:"Texto não enviado"
 });
 
@@ -151,35 +161,83 @@ erro:"Texto não enviado"
 const tipo=
 detectarTipo(texto);
 
-const dominio=
-extrairDominio(texto);
-
 let score=0;
-
 let motivos=[];
 
+let dominio="";
 let idadeDominio=
 "Não disponível";
 
+if(tipo==="SITE"){
+
+dominio=
+extrairDominio(texto);
+
+}
+
 
 // ========================
-// DOMÍNIO FALSO
+// EMAIL
 // ========================
 
-if(
-tipo==="SITE"
-){
+if(tipo==="EMAIL"){
+
+const palavras=[
+
+"suporte",
+"seguranca",
+"pix",
+"banco",
+"netflix",
+"google",
+"youtube"
+
+];
+
+for(const palavra of palavras){
 
 if(
-detectarTyposquatting(
-dominio
-)
+texto
+.toLowerCase()
+.includes(palavra)
 ){
 
-score+=40;
+score+=20;
 
 motivos.push(
-"Possível falsificação de marca conhecida"
+"Possível imitação de marca conhecida"
+);
+
+break;
+
+}
+
+}
+
+}
+
+
+// ========================
+// TELEFONE/PIX
+// ========================
+
+if(tipo==="TELEFONE/PIX"){
+
+const numero=
+texto.replace(/\D/g,"");
+
+if(
+
+numero.startsWith("0800") ||
+numero.startsWith("0300")
+
+){
+
+score+=10;
+
+motivos.push(
+"Formato suspeito"
+
 );
 
 }
@@ -188,8 +246,10 @@ motivos.push(
 
 
 // ========================
-// GOOGLE SAFE BROWSING
+// SAFE BROWSING
 // ========================
+
+if(tipo==="SITE"){
 
 try{
 
@@ -233,14 +293,19 @@ google.data.matches
 score+=100;
 
 motivos.push(
-"Detectado pelo Google Safe Browsing"
+"Detectado pelo Google"
 );
 
 }
 
 }catch(e){
 
-console.log(e.message);
+console.log(
+"Erro Google:",
+e.message
+);
+
+}
 
 }
 
@@ -261,6 +326,7 @@ await axios.get(
 );
 
 const criado=
+
 whois.data
 ?.WhoisRecord
 ?.createdDate;
@@ -282,7 +348,7 @@ if(anos<=1){
 score+=25;
 
 motivos.push(
-"Domínio recente"
+"Domínio muito recente"
 );
 
 }
@@ -291,9 +357,32 @@ motivos.push(
 
 }catch(e){
 
-console.log(e.message);
+console.log(
+"Erro WHOIS:",
+e.message
+);
 
 }
+
+}
+
+
+// ========================
+// TYPOSQUATTING
+// ========================
+
+if(
+
+tipo==="SITE" &&
+detectarMarcaFalsa(dominio)
+
+){
+
+score+=40;
+
+motivos.push(
+"Possível falsificação de marca conhecida"
+);
 
 }
 
@@ -330,7 +419,10 @@ motivos.push(
 
 }catch(e){
 
-console.log(e.message);
+console.log(
+"Erro URLScan:",
+e.message
+);
 
 }
 
@@ -346,14 +438,18 @@ data:denuncias
 }=await supabase
 .from("lista_negra")
 .select("*")
-.eq("conteudo",texto);
+.eq(
+"conteudo",
+texto
+);
 
 const totalDenuncias=
 denuncias?.length||0;
 
 if(totalDenuncias>0){
 
-score+=(totalDenuncias*5);
+score+=
+(totalDenuncias*5);
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
@@ -370,22 +466,21 @@ let resultado;
 
 try{
 
-const respostaIA=
-await ai.models.generateContent({
+const prompt=`
 
-model:"gemini-2.5-flash",
+Você é uma IA antifraude.
 
-contents:`
+Conteúdo:
+${texto}
 
-Você é IA antifraude.
+Tipo:
+${tipo}
 
-Tipo:${tipo}
+Score:
+${score}
 
-Conteúdo:${texto}
-
-Score:${score}
-
-Motivos:${motivos.join(",")}
+Motivos:
+${motivos.join(",")}
 
 Retorne JSON:
 
@@ -395,12 +490,21 @@ Retorne JSON:
 "motivo":""
 }
 
-`
+`;
+
+const respostaIA=
+await ai.models.generateContent({
+
+model:"gemini-2.5-flash",
+contents:prompt
 
 });
 
 let textoIA=
-respostaIA.text
+respostaIA.text;
+
+textoIA=
+textoIA
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim();
@@ -408,22 +512,25 @@ respostaIA.text
 resultado=
 JSON.parse(textoIA);
 
-}catch{
+}catch(error){
 
 resultado={
 
 status:
 score>=100
 ?"ALTO RISCO"
-:score>=30
+:score>=20
 ?"SUSPEITO"
 :"SEGURO",
 
 confianca:70,
 
 motivo:
-
+tipo==="SITE"
+?
 `Domínio criado há ${idadeDominio}. ${motivos.join(". ")}`
+:
+motivos.join(". ")
 
 };
 
@@ -467,12 +574,16 @@ resultado.motivo
 
 }catch(error){
 
-console.log(error);
+console.log(
+"ERRO:",
+error
+);
 
 return res
 .status(500)
 .json({
-erro:"Erro ao verificar"
+erro:
+"Erro ao verificar"
 });
 
 }
@@ -512,7 +623,8 @@ sucesso:true
 return res
 .status(500)
 .json({
-erro:"Erro denunciar"
+erro:
+"Erro ao denunciar"
 });
 
 }
@@ -552,7 +664,8 @@ sucesso:true
 return res
 .status(500)
 .json({
-erro:"Erro favoritar"
+erro:
+"Erro ao favoritar"
 });
 
 }
@@ -568,10 +681,13 @@ erro:"Erro favoritar"
 const PORT=
 process.env.PORT||3000;
 
-app.listen(PORT,()=>{
+app.listen(
+PORT,
+()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"
+
 );
 
 });

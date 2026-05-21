@@ -1,37 +1,29 @@
 require("dotenv").config();
 
-const express=require("express");
-const cors=require("cors");
-const axios=require("axios");
-const {createClient}=require("@supabase/supabase-js");
-const {GoogleGenAI}=require("@google/genai");
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const { createClient } = require("@supabase/supabase-js");
+const { GoogleGenAI } = require("@google/genai");
 
-const app=express();
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const GOOGLE_SAFE_KEY=
-process.env.GOOGLE_SAFE_BROWSING_KEY;
+const GOOGLE_SAFE_KEY = process.env.GOOGLE_SAFE_BROWSING_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const URLSCAN_API_KEY = process.env.URLSCAN_API_KEY;
+const WHOIS_API_KEY = process.env.WHOIS_API_KEY;
 
-const GEMINI_API_KEY=
-process.env.GEMINI_API_KEY;
-
-const URLSCAN_API_KEY=
-process.env.URLSCAN_API_KEY;
-
-const WHOIS_API_KEY=
-process.env.WHOIS_API_KEY;
-
-const supabase=createClient(
+const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
 
-const ai=new GoogleGenAI({
-apiKey:GEMINI_API_KEY
+const ai = new GoogleGenAI({
+apiKey: GEMINI_API_KEY
 });
-
 
 // ====================
 // VALIDAR CPF
@@ -39,10 +31,9 @@ apiKey:GEMINI_API_KEY
 
 function validarCPF(cpf){
 
-cpf=cpf.replace(/\D/g,'');
+cpf = cpf.replace(/\D/g,'');
 
-if(cpf.length!==11)
-return false;
+if(cpf.length !== 11) return false;
 
 if(/^(\d)\1+$/.test(cpf))
 return false;
@@ -76,7 +67,6 @@ return resto===parseInt(cpf.charAt(10));
 
 }
 
-
 // ====================
 // DETECTAR TIPO
 // ====================
@@ -85,15 +75,10 @@ function detectarTipo(texto){
 
 texto=texto.trim();
 
-if(texto.includes("@")){
+if(texto.includes("@"))
 return "EMAIL";
-}
 
-const numeros=
-texto.replace(/\D/g,'');
-
-
-// CPF
+const numeros=texto.replace(/\D/g,'');
 
 if(
 numeros.length===11 &&
@@ -102,18 +87,12 @@ validarCPF(numeros)
 return "CPF/PIX";
 }
 
-
-// TELEFONE
-
 if(
 numeros.length>=10 &&
 numeros.length<=13
 ){
 return "TELEFONE/PIX";
 }
-
-
-// PIX ALEATÓRIA
 
 if(
 texto.length>=25 &&
@@ -122,11 +101,8 @@ texto.length<=36
 return "PIX ALEATORIA";
 }
 
-
-// SITE
-
 if(
-texto.includes(".")||
+texto.includes(".") ||
 texto.includes("http")
 ){
 return "SITE";
@@ -135,7 +111,6 @@ return "SITE";
 return "DESCONHECIDO";
 
 }
-
 
 // ====================
 // EXTRAIR DOMÍNIO
@@ -151,7 +126,6 @@ return url
 .split("/")[0];
 
 }
-
 
 // ====================
 // MARCAS
@@ -172,92 +146,58 @@ const marcas=[
 
 ];
 
-
 // ====================
 // VERIFICAR
 // ====================
 
-app.post(
-"/api/verificar",
-async(req,res)=>{
+app.post("/api/verificar", async(req,res)=>{
 
 try{
 
-const{
-texto,
-usuario_id
-}=req.body;
+const { texto, usuario_id } = req.body;
 
 if(!texto){
 
-return res
-.status(400)
-.json({
+return res.status(400).json({
 erro:"Texto vazio"
 });
 
 }
 
-let tipo=
-detectarTipo(texto);
+let tipo=detectarTipo(texto);
 
 let score=0;
-
 let motivos=[];
-
 let dominio="";
 
-
-// ====================
 // SITE
-// ====================
 
 if(tipo==="SITE"){
 
-dominio=
-extrairDominio(texto);
-
-
-// TYPOSQUATTING
+dominio=extrairDominio(texto);
 
 for(let marca of marcas){
 
 if(
-
-dominio.includes(marca)
-
-&&
-
-dominio!==`${marca}.com`
-
-&&
-
+dominio.includes(marca) &&
+dominio!==`${marca}.com` &&
 dominio!==`${marca}.com.br`
-
 ){
 
 score+=40;
 
 motivos.push(
-
 `Possível falsificação da marca ${marca}`
-
 );
 
 }
 
 }
 
-
-// SAFE BROWSING
-
 try{
 
-const google=
-await axios.post(
-
+const google=await axios.post(
 `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
-
 {
 client:{
 clientId:"antigolpe",
@@ -272,9 +212,7 @@ threatTypes:[
 platformTypes:[
 "ANY_PLATFORM"
 ],
-threatEntryTypes:[
-"URL"
-],
+threatEntryTypes:["URL"],
 threatEntries:[
 {
 url:texto
@@ -282,7 +220,6 @@ url:texto
 ]
 }
 }
-
 );
 
 if(
@@ -307,16 +244,10 @@ e.message
 
 }
 
-
-// WHOIS
-
 try{
 
-const whois=
-await axios.get(
-
+const whois=await axios.get(
 `https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_API_KEY}&domainName=${dominio}&outputFormat=JSON`
-
 );
 
 const criado=
@@ -337,27 +268,19 @@ e.message
 
 }
 
-
-// URLSCAN
-
 try{
 
 await axios.post(
-
 "https://urlscan.io/api/v1/scan/",
-
 {
 url:texto,
 visibility:"public"
 },
-
 {
 headers:{
-"API-Key":
-URLSCAN_API_KEY
+"API-Key":URLSCAN_API_KEY
 }
 }
-
 );
 
 motivos.push(
@@ -375,59 +298,30 @@ e.message
 
 }
 
-
-// CPF
-
 if(tipo==="CPF/PIX"){
-
-motivos.push(
-"CPF válido identificado"
-);
-
+motivos.push("CPF válido identificado");
 }
-
-
-// TELEFONE
 
 if(tipo==="TELEFONE/PIX"){
-
-motivos.push(
-"Telefone/PIX identificado"
-);
-
+motivos.push("Telefone/PIX identificado");
 }
-
-
-// EMAIL
 
 if(tipo==="EMAIL"){
-
-motivos.push(
-"Email identificado"
-);
-
+motivos.push("Email identificado");
 }
 
-
-// COMUNIDADE
-
-const{
-data:denuncias
-}=await supabase
+const { data:denuncias } =
+await supabase
 .from("lista_negra")
 .select("*")
-.eq(
-"conteudo",
-texto
-);
+.eq("conteudo",texto);
 
 const totalDenuncias=
-denuncias?.length||0;
+denuncias?.length || 0;
 
 if(totalDenuncias>0){
 
-score+=
-(totalDenuncias*5);
+score+=(totalDenuncias*5);
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
@@ -435,15 +329,11 @@ motivos.push(
 
 }
 
-
-// IA
-
 let resultado;
 
 try{
 
 const prompt=`
-
 Você é uma IA antifraude.
 
 Conteúdo:
@@ -465,7 +355,6 @@ Retorne JSON:
 "confianca":0,
 "motivo":""
 }
-
 `;
 
 const resposta=
@@ -477,10 +366,7 @@ contents:prompt
 });
 
 let textoIA=
-resposta.text;
-
-textoIA=
-textoIA
+resposta.text
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim();
@@ -494,102 +380,19 @@ resultado={
 
 status:
 score>=80
-?"FRAUDE"
-:score>0
-?"SUSPEITO"
-:"SEGURO",
+? "FRAUDE"
+: score>0
+? "SUSPEITO"
+: "SEGURO",
 
 confianca:90,
 
-resultado={
+motivo:
+motivos.join(". ")
 
-status:
-score>=80
-?"FRAUDE"
-:score>0
-?"SUSPEITO"
-:"SEGURO",
-
-confianca:90,
-
-motivo:(()=>{
-
-// SITE SEGURO
-
-if(
-tipo==="SITE" &&
-score===0
-){
-
-return `O domínio ${dominio} foi analisado pelo sistema AntiGolpe e não apresentou sinais conhecidos de ameaça ou comportamento malicioso. A análise automática não encontrou denúncias relevantes, atividades suspeitas ou padrões frequentemente associados a golpes digitais.`;
-
-}
-
-
-// SITE SUSPEITO
-
-if(
-tipo==="SITE" &&
-score>0 &&
-score<80
-){
-
-return `O domínio ${dominio} apresentou características compatíveis com possíveis tentativas de falsificação ou comportamento suspeito. Foram encontrados padrões frequentemente associados a golpes digitais. Recomenda-se cautela antes de fornecer dados pessoais, senhas ou informações financeiras.`;
-
-}
-
-
-// FRAUDE
-
-if(
-tipo==="SITE" &&
-score>=80
-){
-
-return `Foram encontrados fortes indícios de fraude envolvendo o domínio ${dominio}. A análise identificou possíveis tentativas de falsificação de marca, registros suspeitos e denúncias da comunidade. Recomenda-se evitar acesso ao conteúdo e não compartilhar informações pessoais ou bancárias.`;
-
-}
-
-
-// CPF
-
-if(
-tipo==="CPF/PIX"
-){
-
-return `CPF identificado e validado estruturalmente. A análise confirma consistência matemática do documento informado. Isso não garante autenticidade da identidade associada, apenas que o formato apresentado é válido.`;
-
-}
-
-
-// TELEFONE
-
-if(
-tipo==="TELEFONE/PIX"
-){
-
-return `Número identificado com formato compatível para telefone ou chave PIX. Nenhum indicador suspeito foi encontrado durante a análise local e comunitária realizada pelo sistema.`;
-
-}
-
-
-// EMAIL
-
-if(
-tipo==="EMAIL"
-){
-
-return `O endereço informado foi identificado como email válido em sua estrutura. Nenhum padrão conhecido de risco foi encontrado durante a análise local do sistema.`;
-
-}
-
-return motivos.join(". ");
-
-})()
 };
 
-
-// HISTÓRICO
+}
 
 await supabase
 .from("verificacoes")
@@ -597,28 +400,21 @@ await supabase
 
 conteudo:texto,
 tipo,
-resultado:
-resultado.status,
+resultado:resultado.status,
 score,
-risco:
-resultado.motivo,
+risco:resultado.motivo,
 usuario_id
 
 }]);
 
-
 return res.json({
 
 tipo,
-status:
-resultado.status,
-confianca:
-resultado.confianca,
+status:resultado.status,
+confianca:resultado.confianca,
 score,
-denuncias:
-totalDenuncias,
-motivo:
-resultado.motivo
+denuncias:totalDenuncias,
+motivo:resultado.motivo
 
 });
 
@@ -626,40 +422,29 @@ resultado.motivo
 
 console.log(error);
 
-return res
-.status(500)
-.json({
+return res.status(500).json({
 erro:"Erro verificar"
 });
 
 }
 
-}
-);
-
+});
 
 // ====================
 // DENUNCIAR
 // ====================
 
-app.post(
-"/api/denunciar",
-async(req,res)=>{
+app.post("/api/denunciar",async(req,res)=>{
 
 try{
 
-const{
-texto,
-usuario_id
-}=req.body;
+const {texto,usuario_id}=req.body;
 
 await supabase
 .from("lista_negra")
 .insert([{
-
 conteudo:texto,
 usuario_id
-
 }]);
 
 return res.json({
@@ -668,40 +453,29 @@ sucesso:true
 
 }catch{
 
-return res
-.status(500)
-.json({
+return res.status(500).json({
 erro:"Erro denunciar"
 });
 
 }
 
-}
-);
-
+});
 
 // ====================
 // FAVORITAR
 // ====================
 
-app.post(
-"/api/favoritar",
-async(req,res)=>{
+app.post("/api/favoritar",async(req,res)=>{
 
 try{
 
-const{
-texto,
-usuario_id
-}=req.body;
+const {texto,usuario_id}=req.body;
 
 await supabase
 .from("favoritos")
 .insert([{
-
 conteudo:texto,
 usuario_id
-
 }]);
 
 return res.json({
@@ -710,17 +484,13 @@ sucesso:true
 
 }catch{
 
-return res
-.status(500)
-.json({
+return res.status(500).json({
 erro:"Erro favoritar"
 });
 
 }
 
-}
-);
-
+});
 
 // ====================
 // SERVIDOR
@@ -729,13 +499,10 @@ erro:"Erro favoritar"
 const PORT=
 process.env.PORT||3000;
 
-app.listen(
-PORT,
-()=>{
+app.listen(PORT,()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"
 );
 
-}
-);
+});

@@ -588,8 +588,6 @@ return motivos.join(". ");
 })()
 };
 
-}
-
 
 // HISTÓRICO
 

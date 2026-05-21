@@ -501,9 +501,91 @@ score>=80
 
 confianca:90,
 
-motivo:
-motivos.join(". ")
+resultado={
 
+status:
+score>=80
+?"FRAUDE"
+:score>0
+?"SUSPEITO"
+:"SEGURO",
+
+confianca:90,
+
+motivo:(()=>{
+
+// SITE SEGURO
+
+if(
+tipo==="SITE" &&
+score===0
+){
+
+return `O domínio ${dominio} foi analisado pelo sistema AntiGolpe e não apresentou sinais conhecidos de ameaça ou comportamento malicioso. A análise automática não encontrou denúncias relevantes, atividades suspeitas ou padrões frequentemente associados a golpes digitais.`;
+
+}
+
+
+// SITE SUSPEITO
+
+if(
+tipo==="SITE" &&
+score>0 &&
+score<80
+){
+
+return `O domínio ${dominio} apresentou características compatíveis com possíveis tentativas de falsificação ou comportamento suspeito. Foram encontrados padrões frequentemente associados a golpes digitais. Recomenda-se cautela antes de fornecer dados pessoais, senhas ou informações financeiras.`;
+
+}
+
+
+// FRAUDE
+
+if(
+tipo==="SITE" &&
+score>=80
+){
+
+return `Foram encontrados fortes indícios de fraude envolvendo o domínio ${dominio}. A análise identificou possíveis tentativas de falsificação de marca, registros suspeitos e denúncias da comunidade. Recomenda-se evitar acesso ao conteúdo e não compartilhar informações pessoais ou bancárias.`;
+
+}
+
+
+// CPF
+
+if(
+tipo==="CPF/PIX"
+){
+
+return `CPF identificado e validado estruturalmente. A análise confirma consistência matemática do documento informado. Isso não garante autenticidade da identidade associada, apenas que o formato apresentado é válido.`;
+
+}
+
+
+// TELEFONE
+
+if(
+tipo==="TELEFONE/PIX"
+){
+
+return `Número identificado com formato compatível para telefone ou chave PIX. Nenhum indicador suspeito foi encontrado durante a análise local e comunitária realizada pelo sistema.`;
+
+}
+
+
+// EMAIL
+
+if(
+tipo==="EMAIL"
+){
+
+return `O endereço informado foi identificado como email válido em sua estrutura. Nenhum padrão conhecido de risco foi encontrado durante a análise local do sistema.`;
+
+}
+
+return motivos.join(". ");
+
+})()
 };
 
 }

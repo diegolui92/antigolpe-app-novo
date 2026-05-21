@@ -17,6 +17,12 @@ process.env.GOOGLE_SAFE_BROWSING_KEY;
 const GEMINI_API_KEY =
 process.env.GEMINI_API_KEY;
 
+const URLSCAN_API_KEY =
+process.env.URLSCAN_API_KEY;
+
+const WHOIS_API_KEY =
+process.env.WHOIS_API_KEY;
+
 const supabase = createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
@@ -24,7 +30,7 @@ process.env.SUPABASE_ANON_KEY
 
 const ai =
 new GoogleGenAI({
-apiKey: GEMINI_API_KEY
+apiKey:GEMINI_API_KEY
 });
 
 
@@ -34,7 +40,7 @@ apiKey: GEMINI_API_KEY
 
 function detectarTipo(texto){
 
-texto = texto.toLowerCase();
+texto=texto.toLowerCase();
 
 if(texto.includes("@"))
 return "EMAIL";
@@ -46,10 +52,25 @@ texto.includes(".")
 return "SITE";
 }
 
-if(texto.length >= 11)
+if(texto.length>=11)
 return "TELEFONE/PIX";
 
 return "DESCONHECIDO";
+
+}
+
+
+// ========================
+// EXTRAIR DOMINIO
+// ========================
+
+function extrairDominio(url){
+
+return url
+.replace("https://","")
+.replace("http://","")
+.replace("www.","")
+.split("/")[0];
 
 }
 
@@ -83,8 +104,10 @@ const tipo =
 detectarTipo(texto);
 
 let score=0;
-
 let motivos=[];
+
+const dominio =
+extrairDominio(texto);
 
 
 // ========================
@@ -93,8 +116,11 @@ let motivos=[];
 
 try{
 
-const google = await axios.post(
+const google =
+await axios.post(
+
 `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
+
 {
 client:{
 clientId:"antigolpe",
@@ -119,6 +145,7 @@ url:texto
 ]
 }
 }
+
 );
 
 if(
@@ -126,7 +153,7 @@ google.data &&
 google.data.matches
 ){
 
-score += 100;
+score+=100;
 
 motivos.push(
 "Detectado pelo Google Safe Browsing"
@@ -145,12 +172,103 @@ e.message
 
 
 // ========================
+// WHOIS
+// ========================
+
+try{
+
+const whois=
+await axios.get(
+
+`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_API_KEY}&domainName=${dominio}&outputFormat=JSON`
+
+);
+
+const criado=
+
+whois.data
+?.WhoisRecord
+?.createdDate;
+
+if(criado){
+
+const anos=
+
+new Date().getFullYear() -
+new Date(criado).getFullYear();
+
+if(anos<=1){
+
+score+=25;
+
+motivos.push(
+"Domínio muito recente"
+);
+
+}
+
+}
+
+}catch(e){
+
+console.log(
+"Erro WHOIS:",
+e.message
+);
+
+}
+
+
+// ========================
+// URLSCAN
+// ========================
+
+try{
+
+const scan=
+await axios.post(
+
+"https://urlscan.io/api/v1/scan/",
+
+{
+url:texto,
+visibility:"public"
+},
+
+{
+headers:{
+"API-Key":
+URLSCAN_API_KEY
+}
+}
+
+);
+
+if(scan.data){
+
+motivos.push(
+"URL analisada pelo URLScan"
+);
+
+}
+
+}catch(e){
+
+console.log(
+"Erro URLSCAN:",
+e.message
+);
+
+}
+
+
+// ========================
 // COMUNIDADE
 // ========================
 
-const {
+const{
 data:denuncias
-} = await supabase
+}=await supabase
 .from("lista_negra")
 .select("*")
 .eq(
@@ -158,12 +276,13 @@ data:denuncias
 texto
 );
 
-const totalDenuncias =
-denuncias?.length || 0;
+const totalDenuncias=
+denuncias?.length||0;
 
-if(totalDenuncias > 0){
+if(totalDenuncias>0){
 
-score += 5;
+score+=
+(totalDenuncias*5);
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
@@ -173,18 +292,16 @@ motivos.push(
 
 
 // ========================
-// IA GEMINI
+// GEMINI
 // ========================
 
 let resultado;
 
 try{
 
-const prompt = `
+const prompt=`
 
 Você é uma IA antifraude.
-
-Analise:
 
 Conteúdo:
 ${texto}
@@ -196,7 +313,7 @@ Score:
 ${score}
 
 Motivos:
-${motivos.join(",")}
+${motivos.join(", ")}
 
 Classifique:
 
@@ -204,7 +321,7 @@ SEGURO
 SUSPEITO
 ALTO RISCO
 
-Retorne SOMENTE JSON:
+Retorne JSON:
 
 {
 "status":"",
@@ -214,22 +331,25 @@ Retorne SOMENTE JSON:
 
 `;
 
-const respostaIA =
+const respostaIA=
 await ai.models.generateContent({
+
 model:"gemini-2.5-flash",
 contents:prompt
+
 });
 
-const textoIA =
+let textoIA=
 respostaIA.text;
 
-let jsonLimpo = textoIA
+textoIA=
+textoIA
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim();
 
-resultado =
-JSON.parse(jsonLimpo);
+resultado=
+JSON.parse(textoIA);
 
 }catch(error){
 
@@ -243,7 +363,7 @@ resultado={
 status:
 score>=100
 ?"ALTO RISCO"
-:score>0
+:score>10
 ?"SUSPEITO"
 :"SEGURO",
 
@@ -258,13 +378,13 @@ motivo:
 
 
 // ========================
-// SALVAR HISTÓRICO
+// SALVAR HISTORICO
 // ========================
 
 await supabase
 .from("verificacoes")
-.insert([
-{
+.insert([{
+
 conteudo:texto,
 tipo,
 resultado:
@@ -273,29 +393,20 @@ score,
 risco:
 resultado.motivo,
 usuario_id
-}
-]);
 
+}]);
 
-// ========================
-// RETORNO APP
-// ========================
 
 return res.json({
 
 tipo,
-
 status:
 resultado.status,
-
 confianca:
 resultado.confianca,
-
 score,
-
 denuncias:
 totalDenuncias,
-
 motivo:
 resultado.motivo
 
@@ -338,23 +449,16 @@ usuario_id
 
 await supabase
 .from("lista_negra")
-.insert([
-{
+.insert([{
 conteudo:texto,
 usuario_id
-}
-]);
+}]);
 
 return res.json({
 sucesso:true
 });
 
 }catch(error){
-
-console.log(
-"Erro denunciar:",
-error
-);
 
 return res
 .status(500)
@@ -385,23 +489,16 @@ usuario_id
 
 await supabase
 .from("favoritos")
-.insert([
-{
+.insert([{
 conteudo:texto,
 usuario_id
-}
-]);
+}]);
 
 return res.json({
 sucesso:true
 });
 
 }catch(error){
-
-console.log(
-"Erro favoritar:",
-error
-);
 
 return res
 .status(500)
@@ -419,8 +516,8 @@ erro:"Erro ao favoritar"
 // SERVIDOR
 // ========================
 
-const PORT =
-process.env.PORT || 3000;
+const PORT=
+process.env.PORT||3000;
 
 app.listen(
 PORT,

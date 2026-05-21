@@ -1,185 +1,424 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const axios = require("axios");
+const { createClient } = require("@supabase/supabase-js");
+const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY
+const GOOGLE_SAFE_KEY =
+process.env.GOOGLE_SAFE_BROWSING_KEY;
+
+const GEMINI_API_KEY =
+process.env.GEMINI_API_KEY;
+
+const supabase = createClient(
+process.env.SUPABASE_URL,
+process.env.SUPABASE_ANON_KEY
 );
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash",
+const ai =
+new GoogleGenAI({
+apiKey: GEMINI_API_KEY
 });
 
 
-// ================= VERIFICAR =================
+// ========================
+// DETECTAR TIPO
+// ========================
 
-app.post("/api/verificar", async (req, res) => {
-  try {
-    const { url } = req.body;
+function detectarTipo(texto){
 
-    if (!url) {
-      return res.status(400).json({
-        erro: "URL obrigatória"
-      });
-    }
+texto = texto.toLowerCase();
 
-    const prompt = `
-Analise este domínio:
+if(texto.includes("@"))
+return "EMAIL";
 
-${url}
-
-Responda APENAS JSON puro:
-
-{
- "tipo":"SITE",
- "status":"SEGURO ou SUSPEITO ou ALTO RISCO",
- "score":0,
- "denuncias":0,
- "explicacao":"explicação curta"
+if(
+texto.includes("http") ||
+texto.includes(".")
+){
+return "SITE";
 }
-`;
 
-    const resultadoIA =
-      await model.generateContent(prompt);
+if(texto.length >= 11)
+return "TELEFONE/PIX";
 
-    let textoIA =
-      resultadoIA.response?.text?.() ||
-      resultadoIA.text ||
-      "";
+return "DESCONHECIDO";
 
-    console.log("Gemini bruto:");
-    console.log(textoIA);
+}
 
-    textoIA = textoIA
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
 
-    let dados;
+// ========================
+// VERIFICAR
+// ========================
 
-    try {
+app.post(
+"/api/verificar",
+async(req,res)=>{
 
-      dados = JSON.parse(textoIA);
+try{
 
-    } catch {
+const {
+texto,
+usuario_id
+}=req.body;
 
-      console.log(
-        "Erro JSON Gemini. Retornando análise básica."
-      );
+if(!texto){
 
-      dados = {
-
-        tipo: "SITE",
-
-        status:
-          url.includes(".xyz")
-            ? "ALTO RISCO"
-            : url.includes(".com.com")
-            ? "SUSPEITO"
-            : "SEGURO",
-
-        score:
-          url.includes(".xyz")
-            ? 5
-            : url.includes(".com.com")
-            ? 3
-            : 0,
-
-        denuncias:
-          url.includes(".xyz")
-            ? 8
-            : 0,
-
-        explicacao:
-          "Análise baseada em padrões conhecidos de phishing, typosquatting e reputação."
-      };
-    }
-
-    return res.json(dados);
-
-  } catch (erro) {
-
-    console.log(erro);
-
-    return res.status(500).json({
-      erro: "Erro interno"
-    });
-
-  }
+return res
+.status(400)
+.json({
+erro:"Texto não enviado"
 });
 
+}
 
-// ================= FAVORITAR =================
+const tipo =
+detectarTipo(texto);
 
-app.post("/api/favoritar", async (req, res) => {
+let score=0;
 
-  try {
-
-    return res.json({
-      sucesso: true
-    });
-
-  } catch {
-
-    return res.status(500).json({
-      sucesso: false
-    });
-
-  }
-
-});
+let motivos=[];
 
 
-// ================= DENUNCIAR =================
+// ========================
+// GOOGLE SAFE BROWSING
+// ========================
 
-app.post("/api/denunciar", async (req, res) => {
+try{
 
-  try {
+const google = await axios.post(
+`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
+{
+client:{
+clientId:"antigolpe",
+clientVersion:"1.0"
+},
+threatInfo:{
+threatTypes:[
+"MALWARE",
+"SOCIAL_ENGINEERING",
+"UNWANTED_SOFTWARE"
+],
+platformTypes:[
+"ANY_PLATFORM"
+],
+threatEntryTypes:[
+"URL"
+],
+threatEntries:[
+{
+url:texto
+}
+]
+}
+}
+);
 
-    return res.json({
-      sucesso: true
-    });
+if(
+google.data &&
+google.data.matches
+){
 
-  } catch {
+score +=100;
 
-    return res.status(500).json({
-      sucesso: false
-    });
+motivos.push(
+"Detectado pelo Google Safe Browsing"
+);
 
-  }
+}
 
-});
-
-
-// ================= HISTORICO =================
-
-app.get("/api/historico", async (req, res) => {
-
-  try {
-
-    return res.json([]);
-
-  } catch {
-
-    return res.status(500).json([]);
-
-  }
-
-});
-
-
-const PORT =
-process.env.PORT || 3000;
-
-app.listen(PORT, () => {
+}catch(e){
 
 console.log(
-`Servidor rodando na porta ${PORT}`
+"Erro Google:",
+e.message
 );
 
+}
+
+
+// ========================
+// COMUNIDADE
+// ========================
+
+const {
+data:denuncias
+}=await supabase
+.from("lista_negra")
+.select("*")
+.eq(
+"conteudo",
+texto
+);
+
+const totalDenuncias=
+denuncias?.length || 0;
+
+if(totalDenuncias>0){
+
+score +=5;
+
+motivos.push(
+`${totalDenuncias} denúncias encontradas`
+);
+
+}
+
+
+// ========================
+// GEMINI
+// ========================
+
+const prompt=`
+
+Você é uma IA antifraude.
+
+Analise:
+
+Conteúdo:
+${texto}
+
+Tipo:
+${tipo}
+
+Score:
+${score}
+
+Motivos:
+${motivos.join(",")}
+
+Classifique:
+
+SEGURO
+SUSPEITO
+ALTO RISCO
+
+Retorne SOMENTE JSON:
+
+{
+"status":"",
+"confianca":0,
+"motivo":""
+}
+
+`;
+
+const respostaIA=
+await ai.models.generateContent({
+model:"gemini-2.5-flash",
+contents:prompt
 });
+
+const textoIA=
+respostaIA.text;
+
+let jsonLimpo=
+textoIA
+.replace(/```json/g,"")
+.replace(/```/g,"")
+.trim();
+
+let resultado;
+
+try{
+
+resultado=
+JSON.parse(
+jsonLimpo
+);
+
+}catch(error){
+
+console.log(
+"Erro JSON Gemini:",
+error
+);
+
+resultado={
+
+status:"SUSPEITO",
+confianca:50,
+motivo:"IA retornou formato inválido"
+
+};
+
+}
+
+
+// ========================
+// HISTÓRICO
+// ========================
+
+await supabase
+.from("verificacoes")
+.insert([
+{
+conteudo:texto,
+tipo,
+resultado:
+resultado.status,
+score,
+risco:
+resultado.motivo,
+usuario_id
+}
+]);
+
+return res.json({
+
+tipo,
+
+status:
+resultado.status,
+
+confianca:
+resultado.confianca,
+
+score,
+
+denuncias:
+totalDenuncias,
+
+motivo:
+resultado.motivo
+
+});
+
+}catch(error){
+
+console.log(
+"ERRO GERAL:",
+error
+);
+
+return res
+.status(500)
+.json({
+erro:
+"Erro ao verificar"
+});
+
+}
+
+}
+);
+
+
+// ========================
+// DENUNCIAR
+// ========================
+
+app.post(
+"/api/denunciar",
+async(req,res)=>{
+
+try{
+
+const{
+texto,
+usuario_id
+}=req.body;
+
+await supabase
+.from("lista_negra")
+.insert([
+{
+conteudo:texto,
+usuario_id
+}
+]);
+
+return res.json({
+sucesso:true
+});
+
+}catch(error){
+
+console.log(
+"Erro denunciar:",
+error
+);
+
+return res
+.status(500)
+.json({
+erro:"Erro ao denunciar"
+});
+
+}
+
+}
+);
+
+
+// ========================
+// FAVORITAR
+// ========================
+
+app.post(
+"/api/favoritar",
+async(req,res)=>{
+
+try{
+
+const{
+texto,
+usuario_id
+}=req.body;
+
+await supabase
+.from("favoritos")
+.insert([
+{
+conteudo:texto,
+usuario_id
+}
+]);
+
+return res.json({
+sucesso:true
+});
+
+}catch(error){
+
+console.log(
+"Erro favoritar:",
+error
+);
+
+return res
+.status(500)
+.json({
+erro:"Erro ao favoritar"
+});
+
+}
+
+}
+);
+
+
+// ========================
+// SERVIDOR
+// ========================
+
+const PORT=
+process.env.PORT || 3000;
+
+app.listen(
+PORT,
+()=>{
+
+console.log(
+"Servidor AntiGolpe rodando"
+);
+
+}
+);

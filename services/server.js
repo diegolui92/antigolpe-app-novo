@@ -519,8 +519,6 @@ return `O endereço informado foi identificado como email válido em sua estrutu
 
 return motivos.join(". ");
 
-})()
-
 };
 
 await supabase

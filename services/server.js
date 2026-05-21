@@ -195,7 +195,7 @@ dominio!==`${marca}.com`
 
 dominio!==`${marca}.com.br`
 
-)}
+){
 
 score+=40;
 

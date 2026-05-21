@@ -77,9 +77,8 @@ return url
 }
 
 
-
 // ========================
-// DETECTAR FALSIFICAÇÃO
+// DOMÍNIOS FALSOS
 // ========================
 
 function detectarTyposquatting(dominio){
@@ -91,31 +90,26 @@ const marcas=[
 "facebook",
 "instagram",
 "nubank",
-"mercadolivre",
 "mercadopago",
+"mercadolivre",
 "whatsapp",
-"amazon",
-"gov"
+"amazon"
 
 ];
 
 for(let marca of marcas){
 
-const legitimos=[
+if(dominio.includes(marca)){
 
-`${marca}.com`,
-`${marca}.com.br`
-
-];
+const dominioLimpo=
+dominio
+.replace(".com.br","")
+.replace(".com","");
 
 if(
-
-dominio.includes(marca)
+dominio!==`${marca}.com`
 &&
-!legitimos.includes(
-dominio
-)
-
+dominio!==`${marca}.com.br`
 ){
 
 return true;
@@ -124,10 +118,11 @@ return true;
 
 }
 
+}
+
 return false;
 
 }
-
 
 
 // ========================
@@ -147,9 +142,7 @@ usuario_id
 
 if(!texto){
 
-return res
-.status(400)
-.json({
+return res.status(400).json({
 erro:"Texto não enviado"
 });
 
@@ -169,9 +162,8 @@ let idadeDominio=
 "Não disponível";
 
 
-
 // ========================
-// DETECTAR DOMÍNIO FALSO
+// DOMÍNIO FALSO
 // ========================
 
 if(
@@ -193,7 +185,6 @@ motivos.push(
 }
 
 }
-
 
 
 // ========================
@@ -249,22 +240,16 @@ motivos.push(
 
 }catch(e){
 
-console.log(
-"Erro Google:",
-e.message
-);
+console.log(e.message);
 
 }
-
 
 
 // ========================
 // WHOIS
 // ========================
 
-if(
-tipo==="SITE"
-){
+if(tipo==="SITE"){
 
 try{
 
@@ -286,21 +271,18 @@ const anos=
 
 new Date().getFullYear()
 -
-new Date(
-criado
-).getFullYear();
+new Date(criado)
+.getFullYear();
 
 idadeDominio=
 `${anos} anos`;
 
-if(
-anos<=1
-){
+if(anos<=1){
 
 score+=25;
 
 motivos.push(
-"Domínio muito recente"
+"Domínio recente"
 );
 
 }
@@ -309,24 +291,18 @@ motivos.push(
 
 }catch(e){
 
-console.log(
-"Erro WHOIS:",
-e.message
-);
+console.log(e.message);
 
 }
 
 }
-
 
 
 // ========================
 // URLSCAN
 // ========================
 
-if(
-tipo==="SITE"
-){
+if(tipo==="SITE"){
 
 try{
 
@@ -341,12 +317,9 @@ visibility:"public"
 
 {
 headers:{
-
 "API-Key":
 URLSCAN_API_KEY
-
 }
-
 }
 
 );
@@ -357,15 +330,11 @@ motivos.push(
 
 }catch(e){
 
-console.log(
-"Erro URLSCAN:",
-e.message
-);
+console.log(e.message);
 
 }
 
 }
-
 
 
 // ========================
@@ -375,31 +344,22 @@ e.message
 const {
 data:denuncias
 }=await supabase
-
 .from("lista_negra")
 .select("*")
-.eq(
-"conteudo",
-texto
-);
+.eq("conteudo",texto);
 
 const totalDenuncias=
 denuncias?.length||0;
 
-if(
-totalDenuncias>0
-){
+if(totalDenuncias>0){
 
-score+=(
-totalDenuncias*5
-);
+score+=(totalDenuncias*5);
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
 );
 
 }
-
 
 
 // ========================
@@ -410,23 +370,24 @@ let resultado;
 
 try{
 
-const prompt=`
+const respostaIA=
+await ai.models.generateContent({
 
-Você é uma IA antifraude.
+model:"gemini-2.5-flash",
 
-Tipo:
-${tipo}
+contents:`
 
-Conteúdo:
-${texto}
+Você é IA antifraude.
 
-Score:
-${score}
+Tipo:${tipo}
 
-Motivos:
-${motivos.join(",")}
+Conteúdo:${texto}
 
-Retorne:
+Score:${score}
+
+Motivos:${motivos.join(",")}
+
+Retorne JSON:
 
 {
 "status":"",
@@ -434,36 +395,20 @@ Retorne:
 "motivo":""
 }
 
-`;
-
-const respostaIA=
-await ai.models.generateContent({
-
-model:"gemini-2.5-flash",
-contents:prompt
+`
 
 });
 
 let textoIA=
-respostaIA.text;
-
-textoIA=
-textoIA
+respostaIA.text
 .replace(/```json/g,"")
 .replace(/```/g,"")
 .trim();
 
 resultado=
-JSON.parse(
-textoIA
-);
+JSON.parse(textoIA);
 
-}catch(error){
-
-console.log(
-"Erro Gemini:",
-error.message
-);
+}catch{
 
 resultado={
 
@@ -478,24 +423,11 @@ confianca:70,
 
 motivo:
 
-tipo==="SITE"
-
-?`Domínio criado há ${idadeDominio}. ${motivos.join(". ")}`
-
-:tipo==="EMAIL"
-
-?`Email analisado. ${motivos.join(". ")}`
-
-:tipo==="TELEFONE/PIX"
-
-?`Telefone/PIX analisado. ${motivos.join(". ")}`
-
-:"Análise local"
+`Domínio criado há ${idadeDominio}. ${motivos.join(". ")}`
 
 };
 
 }
-
 
 
 // ========================
@@ -503,9 +435,7 @@ tipo==="SITE"
 // ========================
 
 await supabase
-.from(
-"verificacoes"
-)
+.from("verificacoes")
 .insert([{
 
 conteudo:texto,
@@ -537,23 +467,18 @@ resultado.motivo
 
 }catch(error){
 
-console.log(
-"ERRO GERAL:",
-error
-);
+console.log(error);
 
 return res
 .status(500)
 .json({
-erro:
-"Erro ao verificar"
+erro:"Erro ao verificar"
 });
 
 }
 
 }
 );
-
 
 
 // ========================
@@ -574,17 +499,15 @@ usuario_id
 await supabase
 .from("lista_negra")
 .insert([{
-
 conteudo:texto,
 usuario_id
-
 }]);
 
 return res.json({
 sucesso:true
 });
 
-}catch(error){
+}catch{
 
 return res
 .status(500)
@@ -596,7 +519,6 @@ erro:"Erro denunciar"
 
 }
 );
-
 
 
 // ========================
@@ -617,17 +539,15 @@ usuario_id
 await supabase
 .from("favoritos")
 .insert([{
-
 conteudo:texto,
 usuario_id
-
 }]);
 
 return res.json({
 sucesso:true
 });
 
-}catch(error){
+}catch{
 
 return res
 .status(500)
@@ -641,7 +561,6 @@ erro:"Erro favoritar"
 );
 
 
-
 // ========================
 // SERVIDOR
 // ========================
@@ -649,13 +568,10 @@ erro:"Erro favoritar"
 const PORT=
 process.env.PORT||3000;
 
-app.listen(
-PORT,
-()=>{
+app.listen(PORT,()=>{
 
 console.log(
 "Servidor AntiGolpe rodando"
 );
 
-}
-);
+});

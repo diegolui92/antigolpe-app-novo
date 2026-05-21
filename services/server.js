@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
+const {GoogleGenAI}=require("@google/genai");
 
 const app = express();
 
@@ -19,10 +20,17 @@ process.env.URLSCAN_API_KEY;
 const WHOIS_KEY=
 process.env.WHOIS_API_KEY;
 
+const GEMINI_API_KEY=
+process.env.GEMINI_API_KEY;
+
 const supabase=createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
+
+const ai=new GoogleGenAI({
+apiKey:GEMINI_API_KEY
+});
 
 // =========================
 // VALIDAR CPF
@@ -32,7 +40,7 @@ function validarCPF(cpf){
 
 cpf=cpf.replace(/\D/g,'');
 
-if(cpf.length!==11) return false;
+if(cpf.length!==11)return false;
 
 if(/^(\d)\1+$/.test(cpf))
 return false;
@@ -66,10 +74,6 @@ return resto===parseInt(cpf.charAt(10));
 
 }
 
-// =========================
-// DETECTAR TIPO
-// =========================
-
 function detectarTipo(texto){
 
 texto=texto.trim();
@@ -88,11 +92,9 @@ return "CPF";
 }
 
 if(
-(
 numeros.length===10 ||
 numeros.length===11 ||
 numeros.length===13
-)
 ){
 return "TELEFONE";
 }
@@ -117,10 +119,6 @@ return "DESCONHECIDO";
 
 }
 
-// =========================
-// IA LOCAL
-// =========================
-
 function analisarRisco(texto){
 
 texto=texto.toLowerCase();
@@ -129,7 +127,6 @@ let score=0;
 let motivos=[];
 
 const suspeitos=[
-
 ".xyz",
 "bit.ly",
 "tinyurl",
@@ -138,7 +135,6 @@ const suspeitos=[
 "bonus",
 "premio",
 "urgente"
-
 ];
 
 suspeitos.forEach(item=>{
@@ -146,47 +142,7 @@ suspeitos.forEach(item=>{
 if(texto.includes(item)){
 
 score+=20;
-
-motivos.push(
-`Possui ${item}`
-);
-
-}
-
-});
-
-const marcas=[
-
-"google",
-"youtube",
-"mercadolivre",
-"netflix",
-"facebook",
-"instagram"
-
-];
-
-marcas.forEach(marca=>{
-
-if(
-
-(
-texto.includes(`${marca}-`) ||
-texto.includes(`${marca}login`) ||
-texto.includes(`${marca}seguranca`)
-)
-
-&&
-
-texto!==`${marca}.com`
-
-){
-
-score+=50;
-
-motivos.push(
-"Possível domínio clonado"
-);
+motivos.push(`Possui ${item}`);
 
 }
 
@@ -203,9 +159,7 @@ motivos
 // VERIFICAR
 // =========================
 
-app.post(
-"/api/verificar",
-async(req,res)=>{
+app.post("/api/verificar",async(req,res)=>{
 
 try{
 
@@ -216,7 +170,8 @@ usuario_id
 
 if(!texto){
 
-return res.status(400).json({
+return res.status(400)
+.json({
 erro:"Texto não enviado"
 });
 
@@ -282,15 +237,70 @@ google.data.matches
 
 score+=100;
 
-motivo+=", Detectado pelo Google Safe Browsing";
+motivo+=
+", Detectado pelo Google Safe Browsing";
 
 }
 
-}catch(e){}
+}catch{}
 
 }
 
 let status="SEGURO";
+
+try{
+
+const prompt=`
+
+Você é uma IA antifraude.
+
+Conteúdo:
+${texto}
+
+Tipo:
+${tipo}
+
+Score:
+${score}
+
+Motivos:
+${motivo}
+
+Retorne JSON:
+
+{
+"status":"",
+"motivo":""
+}
+
+`;
+
+const resposta=
+await ai.models.generateContent({
+
+model:"gemini-2.5-flash",
+contents:prompt
+
+});
+
+let textoIA=
+resposta.text
+.replace(/```json/g,"")
+.replace(/```/g,"")
+.trim();
+
+const resultado=
+JSON.parse(textoIA);
+
+status=
+resultado.status;
+
+motivo=
+resultado.motivo;
+
+}catch{
+
+// FALLBACK
 
 if(score>=70){
 
@@ -303,15 +313,20 @@ status="SUSPEITO";
 }
 
 if(tipo==="CPF"){
-motivo="CPF identificado e validado estruturalmente.";
+motivo=
+"CPF identificado e validado estruturalmente.";
 }
 
 if(tipo==="TELEFONE"){
-motivo="Telefone identificado.";
+motivo=
+"Número identificado como telefone.";
 }
 
 if(tipo==="PIX"){
-motivo="Chave PIX identificada.";
+motivo=
+"Chave PIX identificada.";
+}
+
 }
 
 await supabase

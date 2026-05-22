@@ -130,7 +130,6 @@ const dominio=
 extrairDominio(texto);
 
 const suspeitos=[
-
 ".xyz",
 "ganhe",
 "pix",
@@ -143,7 +142,6 @@ const suspeitos=[
 "verificacao",
 "bloqueado",
 "atualizar"
-
 ];
 
 suspeitos.forEach(item=>{
@@ -161,11 +159,9 @@ motivos.push(
 });
 
 const encurtadores=[
-
 "bit.ly",
 "tinyurl",
 "cutt.ly"
-
 ];
 
 encurtadores.forEach(item=>{
@@ -194,8 +190,6 @@ motivos.push(
 );
 
 }
-
-// ETAPA 13
 
 const regexIP=
 /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
@@ -232,8 +226,6 @@ motivos.push(
 );
 
 }
-
-// ETAPA 14
 
 const tldsRisco=[
 ".top",
@@ -279,6 +271,56 @@ motivos.push(
 
 }
 
+// ETAPA 15
+
+const especiais=
+dominio.match(/[@#$%&*!]/g)||[];
+
+if(especiais.length>=2){
+
+score+=30;
+
+motivos.push(
+"Muitos caracteres especiais"
+);
+
+}
+
+if(/\d{6,}/.test(dominio)){
+
+score+=25;
+
+motivos.push(
+"Muitos números consecutivos"
+);
+
+}
+
+const bancario=[
+
+"acesso",
+"conta",
+"seguro",
+"banco",
+"verificar",
+"token"
+
+];
+
+bancario.forEach(item=>{
+
+if(dominio.includes(item)){
+
+score+=20;
+
+motivos.push(
+`Palavra sensível detectada: ${item}`
+);
+
+}
+
+});
+
 return{
 score,
 motivos
@@ -292,18 +334,13 @@ try{
 
 const {texto,usuario_id}=req.body;
 
-const tipo=
-detectarTipo(texto);
+const tipo=detectarTipo(texto);
 
-const analise=
-analisarRisco(texto);
+const analise=analisarRisco(texto);
 
-let score=
-analise.score;
+let score=analise.score;
 
-let motivos=[
-...analise.motivos
-];
+let motivos=[...analise.motivos];
 
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
@@ -320,41 +357,6 @@ score+=totalDenuncias*10;
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
 );
-
-}
-
-if(tipo==="SITE"){
-
-try{
-
-const google=
-await axios.post(
-`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
-{
-client:{
-clientId:"antigolpe",
-clientVersion:"1.0"
-},
-threatInfo:{
-threatTypes:["MALWARE","SOCIAL_ENGINEERING"],
-platformTypes:["ANY_PLATFORM"],
-threatEntryTypes:["URL"],
-threatEntries:[{url:texto}]
-}
-}
-);
-
-if(google.data.matches){
-
-score+=100;
-
-motivos.push(
-"Google detectou ameaça"
-);
-
-}
-
-}catch{}
 
 }
 

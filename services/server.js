@@ -195,6 +195,48 @@ motivos.push(
 
 }
 
+// ETAPA 13 → IP direto na URL
+
+const regexIP=
+/\b(?:\d{1,3}\.){3}\d{1,3}\b/;
+
+if(regexIP.test(dominio)){
+
+score+=60;
+
+motivos.push(
+"URL utilizando IP direto"
+);
+
+}
+
+// ETAPA 13 → excesso de hífens
+
+const hifens=
+(dominio.match(/-/g)||[]).length;
+
+if(hifens>=3){
+
+score+=30;
+
+motivos.push(
+"Excesso de hífens no domínio"
+);
+
+}
+
+// ETAPA 13 → domínio muito longo
+
+if(dominio.length>35){
+
+score+=20;
+
+motivos.push(
+"Domínio excessivamente longo"
+);
+
+}
+
 return{
 score,
 motivos

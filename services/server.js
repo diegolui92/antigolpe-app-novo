@@ -11,17 +11,10 @@ const app=express();
 app.use(cors());
 app.use(express.json());
 
-const GOOGLE_SAFE_KEY=
-process.env.GOOGLE_SAFE_BROWSING_KEY;
-
-const URLSCAN_KEY=
-process.env.URLSCAN_API_KEY;
-
-const WHOIS_KEY=
-process.env.WHOIS_API_KEY;
-
-const GEMINI_API_KEY=
-process.env.GEMINI_API_KEY;
+const GOOGLE_SAFE_KEY=process.env.GOOGLE_SAFE_BROWSING_KEY;
+const URLSCAN_KEY=process.env.URLSCAN_API_KEY;
+const WHOIS_KEY=process.env.WHOIS_API_KEY;
+const GEMINI_API_KEY=process.env.GEMINI_API_KEY;
 
 const supabase=createClient(
 process.env.SUPABASE_URL,
@@ -42,29 +35,27 @@ if(/^(\d)\1+$/.test(cpf))return false;
 let soma=0;
 
 for(let i=0;i<9;i++){
-soma+=parseInt(cpf.charAt(i))*(10-i);
+soma+=parseInt(cpf[i])*(10-i);
 }
 
 let resto=(soma*10)%11;
 
-if(resto===10||resto===11)
-resto=0;
+if(resto>=10)resto=0;
 
-if(resto!==parseInt(cpf.charAt(9)))
+if(resto!==parseInt(cpf[9]))
 return false;
 
 soma=0;
 
 for(let i=0;i<10;i++){
-soma+=parseInt(cpf.charAt(i))*(11-i);
+soma+=parseInt(cpf[i])*(11-i);
 }
 
 resto=(soma*10)%11;
 
-if(resto===10||resto===11)
-resto=0;
+if(resto>=10)resto=0;
 
-return resto===parseInt(cpf.charAt(10));
+return resto===parseInt(cpf[10]);
 
 }
 
@@ -101,7 +92,8 @@ return "TELEFONE";
 }
 
 if(
-texto.includes("http")||
+texto.includes("http")
+||
 texto.includes(".")
 ){
 return "SITE";
@@ -141,9 +133,8 @@ let score=0;
 let motivos=[];
 
 const suspeitos=[
+
 ".xyz",
-"bit.ly",
-"tinyurl",
 "ganhe",
 "pix",
 "bonus",
@@ -155,6 +146,7 @@ const suspeitos=[
 "verificacao",
 "bloqueado",
 "atualizar"
+
 ];
 
 suspeitos.forEach(item=>{
@@ -170,6 +162,44 @@ motivos.push(
 }
 
 });
+
+const encurtadores=[
+
+"bit.ly",
+"tinyurl",
+"cutt.ly"
+
+];
+
+encurtadores.forEach(item=>{
+
+if(texto.includes(item)){
+
+score+=40;
+
+motivos.push(
+`Encurtador detectado: ${item}`
+);
+
+}
+
+});
+
+const dominio=
+extrairDominio(texto);
+
+const partes=
+dominio.split(".");
+
+if(partes.length>3){
+
+score+=30;
+
+motivos.push(
+"Subdomínios excessivos detectados"
+);
+
+}
 
 const marcas=[
 
@@ -269,12 +299,24 @@ const google=
 await axios.post(
 `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
 {
-client:{clientId:"antigolpe",clientVersion:"1.0"},
+client:{
+clientId:"antigolpe",
+clientVersion:"1.0"
+},
 threatInfo:{
-threatTypes:["MALWARE","SOCIAL_ENGINEERING"],
-platformTypes:["ANY_PLATFORM"],
-threatEntryTypes:["URL"],
-threatEntries:[{url:texto}]
+threatTypes:[
+"MALWARE",
+"SOCIAL_ENGINEERING"
+],
+platformTypes:[
+"ANY_PLATFORM"
+],
+threatEntryTypes:[
+"URL"
+],
+threatEntries:[
+{url:texto}
+]
 }
 }
 );
@@ -291,95 +333,9 @@ motivos.push(
 
 }catch{}
 
-try{
-
-const whois=
-await axios.get(
-`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
-);
-
-const criado=
-whois.data?.WhoisRecord?.createdDate;
-
-if(criado){
-
-const dias=
-(Date.now()-new Date(criado))/86400000;
-
-if(dias<30){
-
-score+=40;
-
-motivos.push(
-`Domínio recente`
-);
-
-}
-
-}
-
-}catch{}
-
-try{
-
-const urlscan=
-await axios.post(
-"https://urlscan.io/api/v1/scan/",
-{
-url:texto,
-visibility:"public"
-},
-{
-headers:{
-"API-Key":URLSCAN_KEY
-}
-}
-);
-
-if(urlscan.data.uuid){
-
-score+=10;
-
-motivos.push(
-"URL analisada globalmente"
-);
-
-}
-
-}catch{}
-
 }
 
 let status="SEGURO";
-let confianca=
-calcularConfianca(score);
-
-let motivoFinal="";
-
-try{
-
-const prompt=`
-Você é IA antifraude.
-
-Texto:${texto}
-Tipo:${tipo}
-Score:${score}
-Motivos:${motivos.join(",")}
-`;
-
-const resposta=
-await ai.models.generateContent({
-model:"gemini-2.5-flash",
-contents:prompt
-});
-
-const textoIA=
-resposta.text.trim();
-
-motivoFinal=
-textoIA;
-
-}catch{
 
 if(score>=70){
 status="ALTO RISCO";
@@ -387,32 +343,16 @@ status="ALTO RISCO";
 status="SUSPEITO";
 }
 
-if(tipo==="EMAIL"){
-motivoFinal=
-"Email identificado e analisado.";
-}
+const confianca=
+calcularConfianca(score);
 
-if(tipo==="PIX"){
-motivoFinal=
-"Chave PIX identificada. Verifique sempre a origem.";
-}
+let motivoFinal=
+motivos.join(". ");
 
-if(tipo==="CPF"){
-motivoFinal=
-"CPF matematicamente válido.";
-}
+if(!motivoFinal){
 
-if(tipo==="TELEFONE"){
 motivoFinal=
-"Número telefônico identificado.";
-}
-
-if(tipo==="SITE"){
-motivoFinal=
-motivos.length
-?motivos.join(". ")
-:"Nenhum comportamento suspeito encontrado.";
-}
+"Nenhum comportamento suspeito encontrado.";
 
 }
 
@@ -428,12 +368,14 @@ usuario_id
 }]);
 
 return res.json({
+
 tipo,
 status,
 score,
 confianca,
 denuncias:totalDenuncias,
 motivo:motivoFinal
+
 });
 
 }catch(error){

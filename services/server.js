@@ -105,8 +105,7 @@ return "PIX";
 
 if(
 texto.includes("http") ||
-texto.includes(".com") ||
-texto.includes(".xyz")
+texto.includes(".")
 ){
 return "SITE";
 }
@@ -130,15 +129,64 @@ const suspeitos=[
 "pix",
 "bonus",
 "premio",
-"urgente"
+"urgente",
+"senha",
+"login",
+"seguranca",
+"verificacao"
 ];
 
 suspeitos.forEach(item=>{
 
 if(texto.includes(item)){
 
-score+=20;
-motivos.push(`Possui ${item}`);
+score+=15;
+
+motivos.push(
+`Possui indicador suspeito: ${item}`
+);
+
+}
+
+});
+
+const marcas=[
+
+"google",
+"youtube",
+"mercadolivre",
+"netflix",
+"facebook",
+"instagram",
+"nubank",
+"amazon"
+
+];
+
+marcas.forEach(marca=>{
+
+if(
+
+(
+texto.includes(`${marca}-`) ||
+texto.includes(`${marca}login`) ||
+texto.includes(`${marca}seguranca`) ||
+texto.includes(`${marca}pix`)
+)
+
+&&
+
+texto!==`${marca}.com`
+&&
+texto!==`${marca}.com.br`
+
+){
+
+score+=50;
+
+motivos.push(
+`Possível falsificação da marca ${marca}`
+);
 
 }
 
@@ -240,6 +288,75 @@ motivos.push(
 
 }catch{}
 
+try{
+
+const dominio=
+texto
+.replace("https://","")
+.replace("http://","")
+.split("/")[0];
+
+const whois=
+await axios.get(
+
+`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
+
+);
+
+const criado=
+whois.data
+?.WhoisRecord
+?.createdDate;
+
+if(criado){
+
+const dias=
+(
+Date.now()-
+new Date(criado)
+)
+/86400000;
+
+if(dias<30){
+
+score+=40;
+
+motivos.push(
+"Domínio criado há menos de 30 dias"
+);
+
+}
+
+}
+
+}catch{}
+
+try{
+
+await axios.post(
+
+"https://urlscan.io/api/v1/scan/",
+
+{
+url:texto,
+visibility:"public"
+},
+
+{
+headers:{
+"API-Key":
+URLSCAN_KEY
+}
+}
+
+);
+
+motivos.push(
+"URL analisada globalmente"
+);
+
+}catch{}
+
 }
 
 let status="SEGURO";
@@ -249,7 +366,6 @@ let motivoFinal="";
 try{
 
 const prompt=`
-
 Você é uma IA antifraude.
 
 Conteúdo:
@@ -265,12 +381,10 @@ Motivos:
 ${motivos.join(",")}
 
 Retorne JSON:
-
 {
 "status":"",
 "motivo":""
 }
-
 `;
 
 const resposta=
@@ -308,27 +422,22 @@ confianca=95;
 status="SUSPEITO";
 confianca=85;
 
-}else{
-
-confianca=99;
-
 }
 
-motivoFinal=motivos.join(". ");
+motivoFinal=
+motivos.join(". ");
 
 }
 
 await supabase
 .from("verificacoes")
 .insert([{
-
 conteudo:texto,
 tipo,
 resultado:status,
 score,
 risco:motivoFinal,
 usuario_id
-
 }]);
 
 return res.json({

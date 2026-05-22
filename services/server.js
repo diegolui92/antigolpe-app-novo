@@ -1,12 +1,12 @@
 require("dotenv").config();
 
-const express = require("express");
-const cors = require("cors");
-const axios = require("axios");
-const { createClient } = require("@supabase/supabase-js");
+const express=require("express");
+const cors=require("cors");
+const axios=require("axios");
+const {createClient}=require("@supabase/supabase-js");
 const {GoogleGenAI}=require("@google/genai");
 
-const app = express();
+const app=express();
 
 app.use(cors());
 app.use(express.json());
@@ -87,14 +87,7 @@ validarCPF(numeros)
 return "CPF";
 }
 
-if(
-numeros.length===10 ||
-numeros.length===11 ||
-numeros.length===13
-){
-return "TELEFONE";
-}
-
+// PIX aleatória primeiro
 if(
 texto.length>=25 &&
 texto.length<=36 &&
@@ -104,7 +97,15 @@ return "PIX";
 }
 
 if(
-texto.includes("http") ||
+numeros.length===10 ||
+numeros.length===11 ||
+numeros.length===13
+){
+return "TELEFONE";
+}
+
+if(
+texto.includes("http")||
 texto.includes(".")
 ){
 return "SITE";
@@ -154,10 +155,10 @@ const marcas=[
 
 "google",
 "youtube",
-"mercadolivre",
 "netflix",
 "facebook",
 "instagram",
+"mercadolivre",
 "nubank",
 "amazon"
 
@@ -167,25 +168,24 @@ marcas.forEach(marca=>{
 
 if(
 
-(
-texto.includes(`${marca}-`) ||
-texto.includes(`${marca}login`) ||
-texto.includes(`${marca}seguranca`) ||
-texto.includes(`${marca}pix`)
-)
-
-&&
-
-texto!==`${marca}.com`
-&&
-texto!==`${marca}.com.br`
+texto.includes(`${marca}.com.`)
+||
+texto.includes(`${marca}.com.com`)
+||
+texto.includes(`${marca}-`)
+||
+texto.includes(`${marca}login`)
+||
+texto.includes(`${marca}seguranca`)
+||
+texto.includes(`${marca}.xyz`)
 
 ){
 
-score+=50;
+score+=70;
 
 motivos.push(
-`Possível falsificação da marca ${marca}`
+`Domínio suspeito simulando ${marca}`
 );
 
 }
@@ -228,134 +228,11 @@ denunciasBanco?.length||0;
 
 if(totalDenuncias>0){
 
-score+=
-(totalDenuncias*10);
+score+=(totalDenuncias*10);
 
 motivos.push(
 `${totalDenuncias} denúncias encontradas`
 );
-
-}
-
-if(tipo==="SITE"){
-
-try{
-
-const google=
-await axios.post(
-
-`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
-
-{
-client:{
-clientId:"antigolpe",
-clientVersion:"1.0"
-},
-threatInfo:{
-threatTypes:[
-"MALWARE",
-"SOCIAL_ENGINEERING",
-"UNWANTED_SOFTWARE"
-],
-platformTypes:[
-"ANY_PLATFORM"
-],
-threatEntryTypes:[
-"URL"
-],
-threatEntries:[
-{
-url:texto
-}
-]
-}
-}
-
-);
-
-if(
-google.data &&
-google.data.matches
-){
-
-score+=100;
-
-motivos.push(
-"Detectado pelo Google Safe Browsing"
-);
-
-}
-
-}catch{}
-
-try{
-
-const dominio=
-texto
-.replace("https://","")
-.replace("http://","")
-.split("/")[0];
-
-const whois=
-await axios.get(
-
-`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
-
-);
-
-const criado=
-whois.data
-?.WhoisRecord
-?.createdDate;
-
-if(criado){
-
-const dias=
-(
-Date.now()-
-new Date(criado)
-)
-/86400000;
-
-if(dias<30){
-
-score+=40;
-
-motivos.push(
-"Domínio criado há menos de 30 dias"
-);
-
-}
-
-}
-
-}catch{}
-
-try{
-
-await axios.post(
-
-"https://urlscan.io/api/v1/scan/",
-
-{
-url:texto,
-visibility:"public"
-},
-
-{
-headers:{
-"API-Key":
-URLSCAN_KEY
-}
-}
-
-);
-
-motivos.push(
-"URL analisada globalmente"
-);
-
-}catch{}
 
 }
 
@@ -368,19 +245,16 @@ try{
 const prompt=`
 Você é uma IA antifraude.
 
-Conteúdo:
-${texto}
+Conteúdo:${texto}
 
-Tipo:
-${tipo}
+Tipo:${tipo}
 
-Score:
-${score}
+Score:${score}
 
-Motivos:
-${motivos.join(",")}
+Motivos:${motivos.join(",")}
 
 Retorne JSON:
+
 {
 "status":"",
 "motivo":""
@@ -404,13 +278,21 @@ resposta.text
 const resultado=
 JSON.parse(textoIA);
 
+if(
+resultado.status
+){
+
 status=
 resultado.status;
 
 motivoFinal=
 resultado.motivo;
 
-}catch{
+}
+
+}catch{}
+
+if(!motivoFinal){
 
 if(score>=70){
 
@@ -424,8 +306,40 @@ confianca=85;
 
 }
 
+if(tipo==="EMAIL"){
+
+motivoFinal=
+"Email identificado. Nenhum padrão conhecido de risco foi encontrado.";
+
+}
+
+if(tipo==="PIX"){
+
+motivoFinal=
+"Chave PIX identificada e analisada localmente.";
+
+}
+
+if(tipo==="CPF"){
+
+motivoFinal=
+"CPF identificado e validado estruturalmente.";
+
+}
+
+if(tipo==="TELEFONE"){
+
+motivoFinal=
+"Número identificado como telefone.";
+
+}
+
+if(tipo==="SITE"){
+
 motivoFinal=
 motivos.join(". ");
+
+}
 
 }
 
@@ -455,9 +369,10 @@ motivo:motivoFinal
 
 console.log(error);
 
-return res.status(500)
+return res
+.status(500)
 .json({
-erro:"Erro ao verificar"
+erro:"Erro verificar"
 });
 
 }

@@ -271,8 +271,6 @@ motivos.push(
 
 }
 
-// ETAPA 15
-
 const especiais=
 dominio.match(/[@#$%&*!]/g)||[];
 
@@ -297,14 +295,12 @@ motivos.push(
 }
 
 const bancario=[
-
 "acesso",
 "conta",
 "seguro",
 "banco",
 "verificar",
 "token"
-
 ];
 
 bancario.forEach(item=>{
@@ -315,6 +311,55 @@ score+=20;
 
 motivos.push(
 `Palavra sensível detectada: ${item}`
+);
+
+}
+
+});
+
+
+// ETAPA 16
+
+if(/^\d/.test(dominio)){
+
+score+=30;
+
+motivos.push(
+"Domínio iniciado por números"
+);
+
+}
+
+const palavrasSeparadas=
+dominio.split("-");
+
+if(palavrasSeparadas.length>=5){
+
+score+=30;
+
+motivos.push(
+"Muitas palavras separadas no domínio"
+);
+
+}
+
+const urgenciaFinanceira=[
+
+"saque",
+"dinheiro",
+"liberado",
+"receber"
+
+];
+
+urgenciaFinanceira.forEach(item=>{
+
+if(dominio.includes(item)){
+
+score+=25;
+
+motivos.push(
+`Urgência financeira: ${item}`
 );
 
 }

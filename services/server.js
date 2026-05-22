@@ -195,7 +195,7 @@ motivos.push(
 
 }
 
-// ETAPA 13 → IP direto na URL
+// ETAPA 13
 
 const regexIP=
 /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
@@ -210,8 +210,6 @@ motivos.push(
 
 }
 
-// ETAPA 13 → excesso de hífens
-
 const hifens=
 (dominio.match(/-/g)||[]).length;
 
@@ -224,8 +222,6 @@ motivos.push(
 );
 
 }
-
-// ETAPA 13 → domínio muito longo
 
 if(dominio.length>35){
 
@@ -326,73 +322,6 @@ motivos.push(
 
 }catch{}
 
-try{
-
-const whois=
-await axios.get(
-`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
-);
-
-const criado=
-whois.data?.WhoisRecord?.createdDate;
-
-const registrador=
-whois.data?.WhoisRecord?.registrarName;
-
-if(criado){
-
-const dias=
-(Date.now()-new Date(criado))
-/86400000;
-
-if(dias<30){
-
-score+=50;
-
-motivos.push(
-`Domínio criado há ${Math.floor(dias)} dias`
-);
-
-}
-
-}
-
-if(registrador){
-
-motivos.push(
-`Registrador: ${registrador}`
-);
-
-}
-
-}catch{}
-
-try{
-
-const urlscan=
-await axios.post(
-"https://urlscan.io/api/v1/scan/",
-{
-url:texto,
-visibility:"public"
-},
-{
-headers:{
-"API-Key":URLSCAN_KEY
-}
-}
-);
-
-if(urlscan.data.uuid){
-
-motivos.push(
-"URL analisada globalmente"
-);
-
-}
-
-}catch{}
-
 }
 
 let status="SEGURO";
@@ -429,14 +358,12 @@ usuario_id
 }]);
 
 return res.json({
-
 tipo,
 status,
 score,
 confianca,
 denuncias:totalDenuncias,
 motivo:motivoFinal
-
 });
 
 }catch(error){

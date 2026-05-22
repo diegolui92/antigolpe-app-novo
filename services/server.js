@@ -201,6 +201,59 @@ motivos.push(
 
 }
 
+// NOVO - typosquatting
+
+const falsificacoes=[
+
+"gooogle",
+"g00gle",
+"paypa1",
+"faceboook",
+"instagrarn",
+"arnazon",
+"nubanck"
+
+];
+
+falsificacoes.forEach(item=>{
+
+if(dominio.includes(item)){
+
+score+=80;
+
+motivos.push(
+`Possível typosquatting: ${item}`
+);
+
+}
+
+});
+
+// NOVO - troca visual
+
+const substituicoes=[
+
+["0","o"],
+["1","l"],
+["3","e"],
+["5","s"]
+
+];
+
+substituicoes.forEach(item=>{
+
+if(dominio.includes(item[0])){
+
+score+=20;
+
+motivos.push(
+`Caracter suspeito ${item[0]}→${item[1]}`
+);
+
+}
+
+});
+
 const marcas=[
 
 "google",
@@ -290,9 +343,6 @@ motivos.push(
 
 if(tipo==="SITE"){
 
-const dominio=
-extrairDominio(texto);
-
 try{
 
 const google=
@@ -368,14 +418,12 @@ usuario_id
 }]);
 
 return res.json({
-
 tipo,
 status,
 score,
 confianca,
 denuncias:totalDenuncias,
 motivo:motivoFinal
-
 });
 
 }catch(error){

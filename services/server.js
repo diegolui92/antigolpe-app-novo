@@ -94,15 +94,14 @@ return "PIX";
 }
 
 if(
-numeros.length===10 ||
-numeros.length===11 ||
-numeros.length===13
+numeros.length>=10 &&
+numeros.length<=13
 ){
 return "TELEFONE";
 }
 
 if(
-texto.includes("http") ||
+texto.includes("http")||
 texto.includes(".")
 ){
 return "SITE";
@@ -142,7 +141,6 @@ let score=0;
 let motivos=[];
 
 const suspeitos=[
-
 ".xyz",
 "bit.ly",
 "tinyurl",
@@ -154,7 +152,6 @@ const suspeitos=[
 "senha",
 "login",
 "seguranca"
-
 ];
 
 suspeitos.forEach(item=>{
@@ -165,47 +162,6 @@ score+=15;
 
 motivos.push(
 `Indicador suspeito: ${item}`
-);
-
-}
-
-});
-
-const marcas=[
-
-"google",
-"youtube",
-"facebook",
-"netflix",
-"mercadolivre",
-"instagram",
-"amazon",
-"nubank"
-
-];
-
-marcas.forEach(marca=>{
-
-if(
-
-texto.includes(`${marca}.com.`)
-||
-texto.includes(`${marca}.com.com`)
-||
-texto.includes(`${marca}.xyz`)
-||
-texto.includes(`${marca}-`)
-||
-texto.includes(`${marca}login`)
-||
-texto.includes(`${marca}seguranca`)
-
-){
-
-score+=70;
-
-motivos.push(
-`Possível falsificação de ${marca}`
 );
 
 }
@@ -238,10 +194,78 @@ let motivos=[
 ...analise.motivos
 ];
 
+// comunidade
+
+const {data:denunciasBanco}=await supabase
+.from("lista_negra")
+.select("*")
+.eq("conteudo",texto);
+
+const totalDenuncias=
+denunciasBanco?.length||0;
+
+if(totalDenuncias>0){
+
+score+=totalDenuncias*10;
+
+motivos.push(
+`${totalDenuncias} denúncias encontradas`
+);
+
+}
+
 if(tipo==="SITE"){
 
 const dominio=
 extrairDominio(texto);
+
+// Safe Browsing
+
+try{
+
+const google=
+await axios.post(
+`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${GOOGLE_SAFE_KEY}`,
+{
+client:{
+clientId:"antigolpe",
+clientVersion:"1.0"
+},
+threatInfo:{
+threatTypes:[
+"MALWARE",
+"SOCIAL_ENGINEERING"
+],
+platformTypes:[
+"ANY_PLATFORM"
+],
+threatEntryTypes:[
+"URL"
+],
+threatEntries:[
+{
+url:texto
+}
+]
+}
+}
+);
+
+if(
+google.data.matches
+){
+
+score+=100;
+
+motivos.push(
+"Google detectou ameaça"
+);
+
+}
+
+}catch{}
+
+// WHOIS
 
 try{
 
@@ -251,42 +275,28 @@ await axios.get(
 );
 
 const criado=
-whois.data
-?.WhoisRecord
-?.createdDate;
-
-const registrador=
-whois.data
-?.WhoisRecord
-?.registrarName;
+whois.data?.WhoisRecord?.createdDate;
 
 if(criado){
 
 const dias=
-(Date.now()-new Date(criado))
-/86400000;
+(Date.now()-new Date(criado))/86400000;
 
 if(dias<30){
 
 score+=40;
 
 motivos.push(
-`Domínio recente (${Math.floor(dias)} dias)`
+`Domínio recente`
 );
 
 }
-
-}
-
-if(registrador){
-
-motivos.push(
-`Registrador: ${registrador}`
-);
 
 }
 
 }catch{}
+
+// URLSCAN
 
 try{
 
@@ -309,7 +319,7 @@ if(urlscan.data.uuid){
 score+=10;
 
 motivos.push(
-"URLScan processou a URL"
+"URL analisada globalmente"
 );
 
 }
@@ -318,10 +328,54 @@ motivos.push(
 
 }
 
+let status="SEGURO";
 let confianca=
 calcularConfianca(score);
 
-let status="SEGURO";
+let motivoFinal="";
+
+try{
+
+const prompt=`
+Você é IA antifraude.
+
+Texto:${texto}
+Tipo:${tipo}
+Score:${score}
+Motivos:${motivos.join(",")}
+
+Retorne:
+
+{
+"status":"",
+"motivo":""
+}
+`;
+
+const resposta=
+await ai.models.generateContent({
+
+model:"gemini-2.5-flash",
+contents:prompt
+
+});
+
+let textoIA=
+resposta.text
+.replace(/```json/g,"")
+.replace(/```/g,"")
+.trim();
+
+const resultado=
+JSON.parse(textoIA);
+
+status=
+resultado.status;
+
+motivoFinal=
+resultado.motivo;
+
+}catch{
 
 if(score>=70){
 
@@ -333,8 +387,27 @@ status="SUSPEITO";
 
 }
 
-let motivoFinal=
+if(tipo==="EMAIL")
+motivoFinal=
+"Email identificado.";
+
+if(tipo==="PIX")
+motivoFinal=
+"Chave PIX identificada.";
+
+if(tipo==="CPF")
+motivoFinal=
+"CPF validado.";
+
+if(tipo==="TELEFONE")
+motivoFinal=
+"Telefone identificado.";
+
+if(tipo==="SITE")
+motivoFinal=
 motivos.join(". ");
+
+}
 
 await supabase
 .from("verificacoes")
@@ -348,20 +421,20 @@ usuario_id
 }]);
 
 return res.json({
-
 tipo,
 status,
 score,
 confianca,
+denuncias:totalDenuncias,
 motivo:motivoFinal
-
 });
 
 }catch(error){
 
 console.log(error);
 
-return res.status(500).json({
+return res.status(500)
+.json({
 erro:"Erro verificar"
 });
 

@@ -233,6 +233,52 @@ motivos.push(
 
 }
 
+// ETAPA 14
+
+const tldsRisco=[
+".top",
+".click",
+".work",
+".zip"
+];
+
+tldsRisco.forEach(item=>{
+
+if(dominio.endsWith(item)){
+
+score+=35;
+
+motivos.push(
+`TLD suspeito: ${item}`
+);
+
+}
+
+});
+
+if(/(.)\1{3,}/.test(dominio)){
+
+score+=25;
+
+motivos.push(
+"Caracteres repetidos excessivamente"
+);
+
+}
+
+const numeros=
+dominio.match(/\d/g)||[];
+
+if(numeros.length>=5){
+
+score+=25;
+
+motivos.push(
+"Muitos números no domínio"
+);
+
+}
+
 return{
 score,
 motivos
@@ -258,9 +304,6 @@ analise.score;
 let motivos=[
 ...analise.motivos
 ];
-
-const dominio=
-extrairDominio(texto);
 
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
@@ -293,19 +336,10 @@ clientId:"antigolpe",
 clientVersion:"1.0"
 },
 threatInfo:{
-threatTypes:[
-"MALWARE",
-"SOCIAL_ENGINEERING"
-],
-platformTypes:[
-"ANY_PLATFORM"
-],
-threatEntryTypes:[
-"URL"
-],
-threatEntries:[
-{url:texto}
-]
+threatTypes:["MALWARE","SOCIAL_ENGINEERING"],
+platformTypes:["ANY_PLATFORM"],
+threatEntryTypes:["URL"],
+threatEntries:[{url:texto}]
 }
 }
 );

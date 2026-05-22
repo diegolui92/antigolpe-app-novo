@@ -4,7 +4,6 @@ const express=require("express");
 const cors=require("cors");
 const axios=require("axios");
 const {createClient}=require("@supabase/supabase-js");
-const {GoogleGenAI}=require("@google/genai");
 
 const app=express();
 
@@ -14,16 +13,11 @@ app.use(express.json());
 const GOOGLE_SAFE_KEY=process.env.GOOGLE_SAFE_BROWSING_KEY;
 const URLSCAN_KEY=process.env.URLSCAN_API_KEY;
 const WHOIS_KEY=process.env.WHOIS_API_KEY;
-const GEMINI_API_KEY=process.env.GEMINI_API_KEY;
 
 const supabase=createClient(
 process.env.SUPABASE_URL,
 process.env.SUPABASE_ANON_KEY
 );
-
-const ai=new GoogleGenAI({
-apiKey:GEMINI_API_KEY
-});
 
 function validarCPF(cpf){
 
@@ -132,6 +126,9 @@ texto=texto.toLowerCase();
 let score=0;
 let motivos=[];
 
+const dominio=
+extrairDominio(texto);
+
 const suspeitos=[
 
 ".xyz",
@@ -185,9 +182,6 @@ motivos.push(
 
 });
 
-const dominio=
-extrairDominio(texto);
-
 const partes=
 dominio.split(".");
 
@@ -200,102 +194,6 @@ motivos.push(
 );
 
 }
-
-// NOVO - typosquatting
-
-const falsificacoes=[
-
-"gooogle",
-"g00gle",
-"paypa1",
-"faceboook",
-"instagrarn",
-"arnazon",
-"nubanck"
-
-];
-
-falsificacoes.forEach(item=>{
-
-if(dominio.includes(item)){
-
-score+=80;
-
-motivos.push(
-`Possível typosquatting: ${item}`
-);
-
-}
-
-});
-
-// NOVO - troca visual
-
-const substituicoes=[
-
-["0","o"],
-["1","l"],
-["3","e"],
-["5","s"]
-
-];
-
-substituicoes.forEach(item=>{
-
-if(dominio.includes(item[0])){
-
-score+=20;
-
-motivos.push(
-`Caracter suspeito ${item[0]}→${item[1]}`
-);
-
-}
-
-});
-
-const marcas=[
-
-"google",
-"youtube",
-"facebook",
-"netflix",
-"mercadolivre",
-"instagram",
-"amazon",
-"nubank"
-
-];
-
-marcas.forEach(marca=>{
-
-if(
-
-texto.includes(`${marca}.com.`)
-||
-texto.includes(`${marca}.com.com`)
-||
-texto.includes(`${marca}.xyz`)
-||
-texto.includes(`${marca}-`)
-||
-texto.includes(`${marca}login`)
-||
-texto.includes(`${marca}seguranca`)
-||
-texto.includes(`${marca}pix`)
-
-){
-
-score+=70;
-
-motivos.push(
-`Possível falsificação de ${marca}`
-);
-
-}
-
-});
 
 return{
 score,
@@ -322,6 +220,9 @@ analise.score;
 let motivos=[
 ...analise.motivos
 ];
+
+const dominio=
+extrairDominio(texto);
 
 const {data:denunciasBanco}=await supabase
 .from("lista_negra")
@@ -383,13 +284,81 @@ motivos.push(
 
 }catch{}
 
+try{
+
+const whois=
+await axios.get(
+`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=${WHOIS_KEY}&domainName=${dominio}&outputFormat=JSON`
+);
+
+const criado=
+whois.data?.WhoisRecord?.createdDate;
+
+const registrador=
+whois.data?.WhoisRecord?.registrarName;
+
+if(criado){
+
+const dias=
+(Date.now()-new Date(criado))
+/86400000;
+
+if(dias<30){
+
+score+=50;
+
+motivos.push(
+`Domínio criado há ${Math.floor(dias)} dias`
+);
+
+}
+
+}
+
+if(registrador){
+
+motivos.push(
+`Registrador: ${registrador}`
+);
+
+}
+
+}catch{}
+
+try{
+
+const urlscan=
+await axios.post(
+"https://urlscan.io/api/v1/scan/",
+{
+url:texto,
+visibility:"public"
+},
+{
+headers:{
+"API-Key":URLSCAN_KEY
+}
+}
+);
+
+if(urlscan.data.uuid){
+
+motivos.push(
+"URL analisada globalmente"
+);
+
+}
+
+}catch{}
+
 }
 
 let status="SEGURO";
 
 if(score>=70){
 status="ALTO RISCO";
-}else if(score>=30){
+}
+else if(score>=30){
 status="SUSPEITO";
 }
 
@@ -418,12 +387,14 @@ usuario_id
 }]);
 
 return res.json({
+
 tipo,
 status,
 score,
 confianca,
 denuncias:totalDenuncias,
 motivo:motivoFinal
+
 });
 
 }catch(error){

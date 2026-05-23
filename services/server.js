@@ -373,78 +373,37 @@ motivos
 
 }
 
-app.post("/api/verificar",async(req,res)=>{
+// =========================
+// DENUNCIAR
+// =========================
+
+app.post("/api/denunciar",async(req,res)=>{
 
 try{
 
-const {texto,usuario_id}=req.body;
-
-const tipo=detectarTipo(texto);
-
-const analise=analisarRisco(texto);
-
-let score=analise.score;
-
-let motivos=[...analise.motivos];
-
-const {data:denunciasBanco}=await supabase
-.from("lista_negra")
-.select("*")
-.eq("conteudo",texto);
-
-const totalDenuncias=
-denunciasBanco?.length||0;
-
-if(totalDenuncias>0){
-
-score+=totalDenuncias*10;
-
-motivos.push(
-`${totalDenuncias} denúncias encontradas`
-);
-
-}
-
-let status="SEGURO";
-
-if(score>=70){
-status="ALTO RISCO";
-}
-else if(score>=30){
-status="SUSPEITO";
-}
-
-const confianca=
-calcularConfianca(score);
-
-let motivoFinal=
-motivos.join(". ");
-
-if(!motivoFinal){
-
-motivoFinal=
-"Nenhum comportamento suspeito encontrado.";
-
-}
+const{
+conteudo,
+motivo,
+descricao,
+usuario_id
+}=req.body;
 
 await supabase
-.from("verificacoes")
+.from("lista_negra")
 .insert([{
-conteudo:texto,
-tipo,
-resultado:status,
-score,
-risco:motivoFinal,
+
+conteudo,
+motivo,
+descricao,
 usuario_id
+
 }]);
 
 return res.json({
-tipo,
-status,
-score,
-confianca,
-denuncias:totalDenuncias,
-motivo:motivoFinal
+
+sucesso:true,
+mensagem:"Denúncia registrada"
+
 });
 
 }catch(error){
@@ -452,7 +411,141 @@ motivo:motivoFinal
 console.log(error);
 
 return res.status(500).json({
-erro:"Erro verificar"
+
+erro:"Erro ao denunciar"
+
+});
+
+}
+
+});
+
+
+// =========================
+// FAVORITAR
+// =========================
+
+app.post("/api/favoritar",async(req,res)=>{
+
+try{
+
+const{
+
+conteudo,
+tipo,
+status,
+usuario_id
+
+}=req.body;
+
+await supabase
+.from("favoritos")
+.insert([{
+
+conteudo,
+tipo,
+status,
+usuario_id
+
+}]);
+
+return res.json({
+
+sucesso:true,
+mensagem:"Adicionado aos favoritos"
+
+});
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+
+erro:"Erro ao favoritar"
+
+});
+
+}
+
+});
+
+
+// =========================
+// HISTÓRICO
+// =========================
+
+app.get("/api/historico",async(req,res)=>{
+
+try{
+
+const usuario_id=
+req.query.usuario_id;
+
+const {data}=await supabase
+.from("verificacoes")
+.select("*")
+.eq(
+"usuario_id",
+usuario_id
+)
+.order(
+"created_at",
+{
+ascending:false
+}
+);
+
+return res.json(
+data||[]
+);
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+
+erro:"Erro histórico"
+
+});
+
+}
+
+});
+
+
+// =========================
+// ALERTAS
+// =========================
+
+app.get("/api/alertas",async(req,res)=>{
+
+try{
+
+const {data}=await supabase
+.from("lista_negra")
+.select("*")
+.order(
+"id",
+{
+ascending:false
+}
+)
+.limit(10);
+
+return res.json(
+data||[]
+);
+
+}catch(error){
+
+console.log(error);
+
+return res.status(500).json({
+
+erro:"Erro alertas"
+
 });
 
 }

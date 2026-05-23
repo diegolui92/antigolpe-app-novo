@@ -21,10 +21,6 @@ const [favoritos,setFavoritos]=useState<any[]>([]);
 const [alertas,setAlertas]=useState<any[]>([]);
 const [usuarioId,setUsuarioId]=useState<string|null>(null);
 
-// =========================
-// USUÁRIO
-// =========================
-
 async function carregarUsuario(){
 
 const {
@@ -40,10 +36,6 @@ session.user.id
 }
 
 }
-
-// =========================
-// CARREGAR
-// =========================
 
 async function carregarHistorico(){
 
@@ -123,11 +115,18 @@ carregarAlertas();
 
 },[usuarioId]);
 
-// =========================
-// VERIFICAR
-// =========================
-
 async function verificar(){
+
+if(!usuarioId){
+
+Alert.alert(
+"Aguarde",
+"Carregando usuário..."
+);
+
+return;
+
+}
 
 try{
 
@@ -164,11 +163,18 @@ Alert.alert(
 
 }
 
-// =========================
-// DENUNCIAR
-// =========================
-
 async function denunciar(){
+
+if(!usuarioId){
+
+Alert.alert(
+"Aguarde",
+"Carregando usuário..."
+);
+
+return;
+
+}
 
 try{
 
@@ -210,11 +216,18 @@ Alert.alert(
 
 }
 
-// =========================
-// FAVORITAR
-// =========================
-
 async function favoritar(){
+
+if(!usuarioId){
+
+Alert.alert(
+"Aguarde",
+"Carregando usuário..."
+);
+
+return;
+
+}
 
 try{
 
